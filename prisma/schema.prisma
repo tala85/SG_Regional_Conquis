@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id                              Int       @id @default(autoincrement())
+  nombre                          String
+  email                           String    @unique
+  password                        String
+  rol                             Rol
+  division                        String    @default("DSA")
+  pais                            String
+  provincia                       String
+  campoMision                     String
+  region                          String
+  permiteInvestiduraCondicional   Boolean   @default(true)
+  porcentajeCondicional           Int       @default(85)
+  clubes                          Club[]
+  progresosEvaluados              Progreso[] 
+}
+
+enum Rol {
+  REGIONAL
+  DIRECTOR
+}
+
+model Club {
+  id          Int          @id @default(autoincrement())
+  nombre      String
+  iglesia     String
+  distrito    String
+  regionalId  Int
+  regional    Usuario      @relation(fields: [regionalId], references: [id])
+  integrantes Integrante[]
+}
+
+model Integrante {
+  id               Int                @id @default(autoincrement())
+  clubId           Int
+  nombre           String
+  apellido         String
+  fechaNacimiento  DateTime
+  funcion          String
+  club             Club               @relation(fields: [clubId], references: [id])
+  clases           IntegranteClase[]
+  progresos        Progreso[]
+}
+
+model Clase {
+  id           Int                   @id @default(autoincrement())
+  nombre       String
+  tipo         TipoClase
+  color        String
+  edadSugerida Int
+  secciones    SeccionRequisito[]
+  integrantes  IntegranteClase[]
+}
+
+enum TipoClase {
+  REGULAR
+  AVANZADA
+  LIDERAZGO
+}
+
+model SeccionRequisito {
+  id         Int          @id @default(autoincrement())
+  claseId    Int
+  titulo     String
+  orden      Int
+  clase      Clase        @relation(fields: [claseId], references: [id])
+  requisitos Requisito[]
+}
+
+model Requisito {
+  id               Int          @id @default(autoincrement())
+  seccionId        Int
+  descripcion      String
+  esSubRequisito   Boolean      @default(false)
+  requisitoPadreId Int?
+  requiereFoto     Boolean      @default(false)
+  grupoOpcionalId  String?      
+  seccion          SeccionRequisito @relation(fields: [seccionId], references: [id])
+  requisitoPadre   Requisito?   @relation("SubRequisitos", fields: [requisitoPadreId], references: [id])
+  subRequisitos    Requisito[]  @relation("SubRequisitos")
+  progresos        Progreso[]
+}
+
+model IntegranteClase {
+  id                   Int        @id @default(autoincrement())
+  integranteId         Int
+  claseId              Int
+  estado               EstadoClase
+  isExternalAgrupada   Boolean    @default(false)
+  fechaInicio          DateTime   @default(now())
+  integrante           Integrante @relation(fields: [integranteId], references: [id])
+  clase                Clase      @relation(fields: [claseId], references: [id])
+}
+
+enum EstadoClase {
+  EN_CURSO
+  CONDICIONAL_85
+  HONORES_100
+  INVESTIDO
+}
+
+model Progreso {
+  id               Int        @id @default(autoincrement())
+  integranteId     Int
+  requisitoId      Int
+  evaluadorId      Int        
+  fechaAprobacion  DateTime   @default(now())
+  urlFotoRespaldo  String?
+  integrante       Integrante @relation(fields: [integranteId], references: [id])
+  requisito        Requisito  @relation(fields: [requisitoId], references: [id])
+  evaluador        Usuario    @relation(fields: [evaluadorId], references: [id])
+}
