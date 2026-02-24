@@ -31,3 +31,25 @@ export const verificarToken = (req: AuthRequest, res: Response, next: NextFuncti
     return res.status(403).json({ status: 'error', message: 'Token inválido o expirado.' });
   }
 };
+
+// Middleware para Control de Acceso Basado en Roles (RBAC)
+export const verificarRol = (rolesPermitidos: string[]) => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    
+    // Verificamos que el usuario exista en la petición (lo tuvo que haber puesto el verificarToken antes)
+    if (!req.usuario) {
+      return res.status(401).json({ status: 'error', message: 'Usuario no autenticado.' });
+    }
+
+    // Si el rol del usuario NO está en la lista de roles permitidos, lo rebotamos (Error 403 Forbidden)
+    if (!rolesPermitidos.includes(req.usuario.rol)) {
+      return res.status(403).json({ 
+        status: 'error', 
+        message: 'Acceso denegado: No tienes el nivel de privilegios necesario para ver este reporte.' 
+      });
+    }
+
+    // Si el rol es correcto (ej: es REGIONAL), le abrimos la puerta para que vea el reporte
+    next();
+  };
+};

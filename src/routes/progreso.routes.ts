@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { registrarProgreso } from '../controllers/progreso.controller';
-import { verificarToken } from '../middlewares/auth.middleware';
+import { verificarToken, verificarRol } from '../middlewares/auth.middleware';
 
 const router = Router();
-router.post('/', verificarToken, registrarProgreso);
+
+// Ruta crítica: Exige token y rol de REGIONAL
+router.post('/firmar', verificarToken, verificarRol(['REGIONAL']), registrarProgreso);
 
 export default router;

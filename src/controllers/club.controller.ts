@@ -22,7 +22,7 @@ export const obtenerIntegrantesPorClub = async (req: Request, res: Response) => 
     const integrantes = await prisma.integrante.findMany({
       where: { clubId: Number(id) },
       include: {
-        clases: true // Incluye información de las clases en las que está inscrito
+        clase: true // Incluye información de las clases en las que está inscrito
       }
     });
     res.status(200).json({ status: 'success', data: integrantes });

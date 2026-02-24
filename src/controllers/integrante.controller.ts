@@ -1,40 +1,135 @@
 import { Request, Response } from 'express';
 import prisma from '../config/db';
+import { calcularEdadExacta } from '../utils/calcularEdad';
 
+// 1. CREAR INTEGRANTE (Control Manual)
 export const crearIntegrante = async (req: Request, res: Response) => {
   try {
-    const { nombre, apellido, fechaNacimiento, funcion, clubId } = req.body;
+    const { nombre, apellido, fechaNacimiento, funcion, clubId, claseId } = req.body;
 
-    // 1. Validación estricta de campos obligatorios
     if (!nombre || !apellido || !fechaNacimiento || !funcion || !clubId) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Faltan campos obligatorios. Asegúrese de enviar nombre, apellido, fechaNacimiento, funcion y clubId.'
-      });
+      return res.status(400).json({ status: 'error', message: 'Faltan campos obligatorios.' });
     }
 
-    // 2. Creación en la base de datos usando Prisma
     const nuevoIntegrante = await prisma.integrante.create({
       data: {
         nombre,
         apellido,
-        fechaNacimiento: new Date(fechaNacimiento), // Convertimos el string a formato Fecha
+        fechaNacimiento: new Date(fechaNacimiento),
         funcion,
-        clubId: Number(clubId) // Aseguramos que el ID sea un número
+        clubId: Number(clubId),
+        claseId: claseId ? Number(claseId) : null 
       }
     });
 
-    // 3. Respuesta exitosa
-    return res.status(201).json({
-      status: 'success',
-      data: nuevoIntegrante
-    });
+    return res.status(201).json({ status: 'success', data: nuevoIntegrante });
 
   } catch (error) {
     console.error('Error al crear integrante:', error);
-    return res.status(500).json({
-      status: 'error',
-      message: 'Error interno del servidor al crear el integrante.'
+    return res.status(500).json({ status: 'error', message: 'Error interno del servidor.' });
+  }
+};
+
+// 2. OBTENER AVANCE DE CLASE
+export const obtenerAvanceClase = async (req: Request, res: Response) => {
+  try {
+    const { integranteId, claseId } = req.params;
+
+    const totalRequisitos = await prisma.requisito.count({
+      where: { seccion: { claseId: Number(claseId) } }
     });
+
+    const requisitosAprobados = await prisma.progreso.count({
+      where: {
+        integranteId: Number(integranteId),
+        requisito: { seccion: { claseId: Number(claseId) } }
+      }
+    });
+
+    const porcentaje = totalRequisitos > 0 ? Math.round((requisitosAprobados / totalRequisitos) * 100) : 0;
+
+    res.status(200).json({
+      status: 'success',
+      data: { totalRequisitos, requisitosAprobados, porcentaje: `${porcentaje}%`, puedeInvestirse: porcentaje >= 100 }
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'Error al calcular el avance.' });
+  }
+};
+
+// 3. EVALUAR CLASE SUGERIDA (Estadístico)
+export const evaluarClaseCorrespondiente = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const integrante = await prisma.integrante.findUnique({ where: { id: Number(id) } });
+
+    if (!integrante) return res.status(404).json({ status: 'error', message: 'Integrante no encontrado.' });
+
+    const edadReal = calcularEdadExacta(new Date(integrante.fechaNacimiento));
+    let edadBusqueda = edadReal;
+    let mensajeSistema = 'Evaluación regular exitosa.';
+
+    if (edadReal < 10) {
+      return res.status(400).json({ status: 'error', message: `Tiene ${edadReal} años. Corresponde a Aventureros.` });
+    } else if (edadReal >= 16) {
+      edadBusqueda = 16; 
+      mensajeSistema = '⚠️ ATENCIÓN: Habilitado para CLASES AGRUPADAS.';
+    }
+
+    const claseSugerida = await prisma.clase.findFirst({
+      where: { edadSugerida: edadBusqueda, tipo: 'REGULAR' }
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        integrante: `${integrante.nombre} ${integrante.apellido}`,
+        edadExacta: edadReal,
+        claseSugerida: claseSugerida?.nombre || 'Guía Mayor',
+        observaciones: mensajeSistema
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: 'Fallo en el motor de evaluación.' });
+  }
+};
+
+// 4. ACTUALIZAR INTEGRANTE (Asignar clases, corregir errores, etc.)
+export const actualizarIntegrante = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params; // Sacamos el ID de la URL
+    const { nombre, apellido, fechaNacimiento, funcion, clubId, claseId } = req.body;
+
+    // 1. Verificamos que el pibe exista en la base de datos antes de tocar nada
+    const integranteExistente = await prisma.integrante.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!integranteExistente) {
+      return res.status(404).json({ status: 'error', message: 'El integrante no existe.' });
+    }
+
+    // 2. Ejecutamos la actualización
+    const integranteActualizado = await prisma.integrante.update({
+      where: { id: Number(id) },
+      data: {
+        nombre: nombre !== undefined ? nombre : undefined,
+        apellido: apellido !== undefined ? apellido : undefined,
+        fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : undefined,
+        funcion: funcion !== undefined ? funcion : undefined,
+        clubId: clubId ? Number(clubId) : undefined,
+        claseId: claseId ? Number(claseId) : undefined 
+      }
+    });
+
+    return res.status(200).json({ 
+      status: 'success', 
+      message: 'Datos actualizados correctamente.',
+      data: integranteActualizado 
+    });
+
+  } catch (error) {
+    console.error('Error al actualizar integrante:', error);
+    return res.status(500).json({ status: 'error', message: 'Fallo interno al actualizar.' });
   }
 };

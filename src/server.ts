@@ -7,6 +7,7 @@ import integranteRoutes from './routes/integrante.routes';
 import usuarioRoutes from './routes/usuario.routes';
 import clubRoutes from './routes/club.routes';
 import authRoutes from './routes/auth.routes';
+import reporteRoutes from './routes/reporte.routes';
 import progresoRoutes from './routes/progreso.routes';
 
 // Cargar variables de entorno (.env)
@@ -45,7 +46,8 @@ app.use('/api/integrantes', integranteRoutes);
 app.use('/api/usuarios', usuarioRoutes);
 app.use('/api/clubes', clubRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/progreso', progresoRoutes);
+app.use('/api/reportes', reporteRoutes);
+app.use('/api/progresos', progresoRoutes);
 
 // ==========================================
 // INICIO DEL SERVIDOR
