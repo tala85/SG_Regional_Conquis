@@ -1,10 +1,13 @@
 import { Router } from 'express';
-import { registrarProgreso } from '../controllers/progreso.controller';
-import { verificarToken, verificarRol } from '../middlewares/auth.middleware';
+import { firmarRequisito, obtenerProgreso } from '../controllers/progreso.controller';
+import { verificarToken } from '../middlewares/auth.middleware';
+import { uploadImagen } from '../middlewares/upload.middleware'; // IMPORTAMOS ESTO
 
 const router = Router();
 
-// Ruta crítica: Exige token y rol de REGIONAL
-router.post('/firmar', verificarToken, verificarRol(['REGIONAL']), registrarProgreso);
+// Ahora la ruta acepta un archivo llamado 'foto'
+router.post('/firmar', verificarToken, uploadImagen.single('foto'), firmarRequisito);
+
+router.get('/integrante/:integranteId/clase/:claseId', verificarToken, obtenerProgreso);
 
 export default router;

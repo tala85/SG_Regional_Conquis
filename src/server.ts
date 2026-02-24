@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
+import helmet from 'helmet'; // 1. Importamos Helmet
+import rateLimit from 'express-rate-limit'; // 2. Importamos Rate Limiter
 import dotenv from 'dotenv';
 import claseRoutes from './routes/clase.routes';
 import integranteRoutes from './routes/integrante.routes';
@@ -9,25 +10,47 @@ import clubRoutes from './routes/club.routes';
 import authRoutes from './routes/auth.routes';
 import reporteRoutes from './routes/reporte.routes';
 import progresoRoutes from './routes/progreso.routes';
+import requisitoRoutes from './routes/requisito.routes';
 
 // Cargar variables de entorno (.env)
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// ==========================================
-// MIDDLEWARES (Nuestra primera línea de defensa)
-// ==========================================
 
-// Helmet securiza las cabeceras HTTP (oculta que usamos Express, previene XSS, etc.)
-app.use(helmet()); 
+// --- ZONA DE CIBERSEGURIDAD (HARDENING) ---
 
-// CORS permite que tu futuro frontend se conecte sin bloqueos
-app.use(cors()); 
+// Escudo 1: Helmet protege las cabeceras HTTP de ataques XSS y Clickjacking
+app.use(helmet());
 
-// Permite que el servidor entienda datos en formato JSON
-app.use(express.json()); 
+// Escudo 2: Rate Limiting (Protección contra Fuerza Bruta y DoS)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // Ventana de 15 minutos
+  max: 100, // Límite de 100 peticiones por IP en esa ventana de tiempo
+  message: { 
+    status: 'error', 
+    message: 'Demasiadas peticiones desde esta IP. El escudo de seguridad se activó. Intente de nuevo en 15 minutos.' 
+  },
+  standardHeaders: true, 
+  legacyHeaders: false, 
+});
+
+// Aplicamos el limitador a TODAS las rutas que empiecen con /api
+app.use('/api', limiter); 
+
+// --- FIN ZONA DE SEGURIDAD ---
+
+app.use(cors());
+app.use(express.json());
+import path from 'path'; // Arriba de todo en las importaciones
+
+// ... más abajo, después de express.json()
+// Servir archivos estáticos (Las fotos de evidencia)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// Y agregamos la ruta del dashboard
+import dashboardRoutes from './routes/dashboard.routes';
+app.use('/api/dashboard', dashboardRoutes);
 
 // ==========================================
 // RUTAS
@@ -48,11 +71,13 @@ app.use('/api/clubes', clubRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/reportes', reporteRoutes);
 app.use('/api/progresos', progresoRoutes);
+app.use('/api/requisitos', requisitoRoutes);
 
 // ==========================================
 // INICIO DEL SERVIDOR
 // ==========================================
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor encendido y escuchando en http://localhost:${PORT}`);
-  console.log(`🛡️  Seguridad base (Helmet & CORS) activada.`);
+    console.log(`🚀 Servidor blindado y corriendo en el puerto ${PORT}`);
 });

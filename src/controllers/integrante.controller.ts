@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../config/db';
 import { calcularEdadExacta } from '../utils/calcularEdad';
+import { AuthRequest } from '../middlewares/auth.middleware';
 
 // 1. CREAR INTEGRANTE (Control Manual)
 export const crearIntegrante = async (req: Request, res: Response) => {
@@ -131,5 +132,72 @@ export const actualizarIntegrante = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error al actualizar integrante:', error);
     return res.status(500).json({ status: 'error', message: 'Fallo interno al actualizar.' });
+  }
+};
+
+// 1. LECTURA: Ver los integrantes de un club específico
+export const obtenerIntegrantesPorClub = async (req: AuthRequest, res: Response) => {
+  try {
+    const clubId = Number(req.params.clubId);
+    const regionalId = req.usuario?.id;
+
+    // Escudo IDOR: Verificamos que el club le pertenezca a este Regional
+    const clubMio = await prisma.club.findFirst({
+      where: { id: clubId, regionalId: Number(regionalId) }
+    });
+
+    if (!clubMio) {
+      return res.status(403).json({ status: 'error', message: 'No tenés permisos para ver este club.' });
+    }
+
+    const integrantes = await prisma.integrante.findMany({
+      where: { clubId: clubId },
+      include: {
+        clase: true // Traemos también los datos de la clase actual si es que ya tiene una
+      }
+    });
+
+    return res.status(200).json({ status: 'success', data: integrantes });
+  } catch (error) {
+    console.error('Error al obtener integrantes:', error);
+    return res.status(500).json({ status: 'error', message: 'Fallo interno al leer los integrantes.' });
+  }
+};
+
+// 2. MODIFICACIÓN: Asignarle una clase oficial a un pibe para que empiece su progreso
+export const asignarClase = async (req: AuthRequest, res: Response) => {
+  try {
+    const integranteId = Number(req.params.integranteId);
+    const { claseId } = req.body; // El ID de la clase que le vamos a asignar (ej: Amigo)
+
+    if (!claseId) {
+      return res.status(400).json({ status: 'error', message: 'Debes enviar el claseId.' });
+    }
+
+    // 1. Actualizamos el perfil del integrante
+    const integranteActualizado = await prisma.integrante.update({
+      where: { id: integranteId },
+      data: { claseId: Number(claseId) }
+    });
+
+    // 2. Magia arquitectónica: Le abrimos su "historial" oficial en la tabla IntegranteClase
+    // Esto es clave para el día de mañana saber cuándo empezó y en qué estado está
+    const historialClase = await prisma.integranteClase.create({
+      data: {
+        integranteId: integranteId,
+        claseId: Number(claseId),
+        estado: 'EN_CURSO'
+      }
+    });
+
+    return res.status(200).json({ 
+      status: 'success', 
+      message: 'Clase asignada y progreso iniciado correctamente.',
+      data: { integranteActualizado, historialClase }
+    });
+
+  } catch (error) {
+    console.error('Error al asignar clase:', error);
+    return res.status(500).json({ status: 'error', message: 'Fallo interno al asignar la clase.' });
   }
 };

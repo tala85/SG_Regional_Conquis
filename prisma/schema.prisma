@@ -68,6 +68,8 @@ enum TipoClase {
   REGULAR
   AVANZADA
   LIDERAZGO
+  NIVEL_1     // Agregado para Conquis+ (16 años)
+  NIVEL_2     // Agregado para Conquis+ (17 años)
 }
 
 model SeccionRequisito {
@@ -82,7 +84,9 @@ model SeccionRequisito {
 model Requisito {
   id               Int              @id @default(autoincrement())
   seccionId        Int
+  numero           String?          // NUEVO: Guarda el "NumeroPunto" del Excel (ej: "1", "2a")
   descripcion      String
+  opcionesExtra    String?          // NUEVO: Guarda lo que venga en la columna "Opciones"
   esSubRequisito   Boolean          @default(false)
   requisitoPadreId Int?
   requiereFoto     Boolean          @default(false)
