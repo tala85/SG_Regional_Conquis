@@ -50,7 +50,13 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Y agregamos la ruta del dashboard
 import dashboardRoutes from './routes/dashboard.routes';
+import especialidadRoutes from './routes/especialidad.routes';
+import { auditoriaMiddleware } from './middlewares/audit.middleware';
+import auditRoutes from './routes/audit.routes';
 app.use('/api/dashboard', dashboardRoutes);
+
+// --- SISTEMA DE AUDITORÍA ---
+app.use(auditoriaMiddleware);
 
 // ==========================================
 // RUTAS
@@ -72,6 +78,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/reportes', reporteRoutes);
 app.use('/api/progresos', progresoRoutes);
 app.use('/api/requisitos', requisitoRoutes);
+app.use('/api/especialidades', especialidadRoutes);
+app.use('/api/auditoria', auditRoutes);
 
 // ==========================================
 // INICIO DEL SERVIDOR

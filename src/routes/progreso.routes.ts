@@ -1,13 +1,19 @@
 import { Router } from 'express';
-import { firmarRequisito, obtenerProgreso } from '../controllers/progreso.controller';
+import { firmarRequisito, obtenerProgreso, obtenerRequisitosPendientes } from '../controllers/progreso.controller';
 import { verificarToken } from '../middlewares/auth.middleware';
-import { uploadImagen } from '../middlewares/upload.middleware'; // IMPORTAMOS ESTO
+import { uploadImagen } from '../middlewares/upload.middleware';
+import { validarSchema } from '../middlewares/validator.middleware'; // NUEVO
+import { firmarRequisitoSchema } from '../schemas/progreso.schema'; // NUEVO
 
 const router = Router();
 
-// Ahora la ruta acepta un archivo llamado 'foto'
-router.post('/firmar', verificarToken, uploadImagen.single('foto'), firmarRequisito);
+// El orden de los escudos es vital: 1. Token -> 2. Foto -> 3. Zod -> 4. Controlador
+router.post('/firmar', 
+  verificarToken, 
+  uploadImagen.single('foto'), 
+  validarSchema(firmarRequisitoSchema), 
+  firmarRequisito
+);
 
-router.get('/integrante/:integranteId/clase/:claseId', verificarToken, obtenerProgreso);
-
+router.get('/integrante/:integranteId/pendientes', verificarToken, obtenerRequisitosPendientes);
 export default router;

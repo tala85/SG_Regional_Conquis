@@ -22,6 +22,9 @@ model Usuario {
   porcentajeCondicional         Int        @default(85)
   clubes                        Club[]
   progresosEvaluados            Progreso[]
+  especialidadesEvaluadas IntegranteEspecialidad[]
+  maestriasEvaluadas IntegranteMaestria[]
+  auditorias BitacoraAuditoria[]
 }
 
 enum Rol {
@@ -51,6 +54,9 @@ model Integrante {
   clase            Clase?            @relation(fields: [claseId], references: [id])
   progresos        Progreso[]
   integranteClases IntegranteClase[]
+  especialidades IntegranteEspecialidad[]
+  maestrias IntegranteMaestria[]
+  xp              Int          @default(0) // Puntos de experiencia para el sistema Conquis+
 }
 
 model Clase {
@@ -84,13 +90,15 @@ model SeccionRequisito {
 model Requisito {
   id               Int              @id @default(autoincrement())
   seccionId        Int
-  numero           String?          // NUEVO: Guarda el "NumeroPunto" del Excel (ej: "1", "2a")
+  numero           String?          // Guarda el "NumeroPunto" del Excel (ej: "1", "2a")
   descripcion      String
-  opcionesExtra    String?          // NUEVO: Guarda lo que venga en la columna "Opciones"
+  opcionesExtra    String?          // Guarda lo que venga en la columna "Opciones" (FIJA:, OPCIONES:, ABIERTA:)
   esSubRequisito   Boolean          @default(false)
   requisitoPadreId Int?
   requiereFoto     Boolean          @default(false)
   grupoOpcionalId  String?
+  puntosXp         Int              @default(0) // Vale 0 para los regulares. Para Conquis+ tendrá valor.
+
   seccion          SeccionRequisito @relation(fields: [seccionId], references: [id])
   requisitoPadre   Requisito?       @relation("SubRequisitos", fields: [requisitoPadreId], references: [id])
   subRequisitos    Requisito[]      @relation("SubRequisitos")
@@ -98,14 +106,16 @@ model Requisito {
 }
 
 model IntegranteClase {
-  id                 Int         @id @default(autoincrement())
-  integranteId       Int
-  claseId            Int
-  estado             EstadoClase
-  isExternalAgrupada Boolean     @default(false)
-  fechaInicio        DateTime    @default(now())
-  integrante         Integrante  @relation(fields: [integranteId], references: [id])
-  clase              Clase       @relation(fields: [claseId], references: [id])
+  id           Int        @id @default(autoincrement())
+  integranteId Int
+  claseId      Int
+  estado       String     @default("EN_CURSO")
+  fechaInicio  DateTime   @default(now())
+  
+  fechaFin     DateTime?  // <-- AGREGAR ESTA LÍNEA (El signo de interrogación significa que puede estar vacía al principio)
+  
+  integrante   Integrante @relation(fields: [integranteId], references: [id])
+  clase        Clase      @relation(fields: [claseId], references: [id])
 }
 
 enum EstadoClase {
@@ -125,4 +135,68 @@ model Progreso {
   integrante      Integrante @relation(fields: [integranteId], references: [id])
   requisito       Requisito  @relation(fields: [requisitoId], references: [id])
   evaluador       Usuario    @relation(fields: [evaluadorId], references: [id])
+}
+
+// --- NUEVO MÓDULO: ESPECIALIDADES ---
+
+model Especialidad {
+  id            Int                      @id @default(autoincrement())
+  nombre        String                   @unique // Evita duplicados en la base
+  categoria     String                   
+  colorFondo    String?                  @default("#FFFFFF")
+  vigente       Boolean                  @default(true) // EL INTERRUPTOR (Soft Delete)
+  integrantes   IntegranteEspecialidad[]
+}
+
+model IntegranteEspecialidad {
+  id              Int          @id @default(autoincrement())
+  integranteId    Int
+  especialidadId  Int
+  evaluadorId     Int          // Quién le firmó la especialidad
+  fechaAprobacion DateTime     @default(now())
+  
+  integrante      Integrante   @relation(fields: [integranteId], references: [id])
+  especialidad    Especialidad @relation(fields: [especialidadId], references: [id])
+  evaluador       Usuario      @relation(fields: [evaluadorId], references: [id])
+
+  // Un integrante no puede sacar la misma especialidad dos veces
+  @@unique([integranteId, especialidadId]) 
+}
+
+// --- NUEVO MÓDULO: MAESTRÍAS ---
+
+model Maestria {
+  id            Int                  @id @default(autoincrement())
+  nombre        String               @unique
+  requisitos    String?              // Acá guardamos el texto explicativo de qué pide
+  vigente       Boolean              @default(true)
+  integrantes   IntegranteMaestria[]
+}
+
+model IntegranteMaestria {
+  id              Int          @id @default(autoincrement())
+  integranteId    Int
+  maestriaId      Int
+  evaluadorId     Int          // Quién verificó y le firmó la maestría
+  fechaAprobacion DateTime     @default(now())
+  
+  integrante      Integrante   @relation(fields: [integranteId], references: [id])
+  maestria        Maestria     @relation(fields: [maestriaId], references: [id])
+  evaluador       Usuario      @relation(fields: [evaluadorId], references: [id])
+
+  @@unique([integranteId, maestriaId]) 
+}
+
+// --- MÓDULO DE CIBERSEGURIDAD: AUDITORÍA ---
+
+model BitacoraAuditoria {
+  id          Int      @id @default(autoincrement())
+  usuarioId   Int?     // Quién disparó la acción (ID del Director/Regional)
+  metodo      String   // POST, PATCH, DELETE
+  ruta        String   // Ej: /api/progresos/firmar
+  cuerpoPeticion String? // Qué datos mandó (Guardado como JSON en texto)
+  ip          String?  // Desde qué dirección de red atacó/operó
+  fecha       DateTime @default(now())
+
+  usuario     Usuario? @relation(fields: [usuarioId], references: [id])
 }

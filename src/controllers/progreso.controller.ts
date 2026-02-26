@@ -4,54 +4,124 @@ import prisma from '../config/db';
 
 export const firmarRequisito = async (req: AuthRequest, res: Response) => {
   try {
-    const { integranteId, requisitoId } = req.body;
-    const evaluadorId = req.usuario?.id; 
-    
-    // Si el middleware dejó pasar una foto, guardamos la ruta relativa
+    const { integranteId, requisitoId, especialidadElegidaId } = req.body;
+    const evaluadorId = req.usuario?.id;
     const urlFotoRespaldo = req.file ? `/uploads/${req.file.filename}` : null;
 
-    if (!integranteId || !requisitoId) {
-      return res.status(400).json({ status: 'error', message: 'Faltan datos: integranteId o requisitoId.' });
-    }
+    if (!evaluadorId) return res.status(401).json({ status: 'error', message: 'No autorizado.' });
 
-    if (!evaluadorId) {
-      return res.status(401).json({ status: 'error', message: 'No estás autorizado para firmar.' });
-    }
-
-    // 1. Escudo de Integridad: Evitar firmas duplicadas
-    const progresoExistente = await prisma.progreso.findFirst({
-      where: {
-        integranteId: Number(integranteId),
-        requisitoId: Number(requisitoId)
-      }
+    const requisitoDb = await prisma.requisito.findUnique({
+      where: { id: Number(requisitoId) },
+      include: { seccion: true }
     });
 
-    if (progresoExistente) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'Este requisito ya fue firmado para este integrante.' 
-      });
+    if (!requisitoDb) return res.status(404).json({ status: 'error', message: 'Requisito no encontrado.' });
+
+    const yaFirmado = await prisma.progreso.findFirst({
+      where: { integranteId: Number(integranteId), requisitoId: Number(requisitoId) }
+    });
+    if (yaFirmado) return res.status(400).json({ status: 'error', message: 'Requisito ya firmado.' });
+
+    // --- EL MOTOR DE ESPECIALIDADES ---
+    let especialidadAOtorgaId: number | null = null;
+
+    if (requisitoDb.opcionesExtra) {
+      if (requisitoDb.opcionesExtra.startsWith('FIJA:')) {
+        const nombreBuscado = requisitoDb.opcionesExtra.split(':')[1].trim();
+        const esp = await prisma.especialidad.findUnique({ where: { nombre: nombreBuscado } });
+        if (esp) especialidadAOtorgaId = esp.id;
+      } 
+      else if (requisitoDb.opcionesExtra.startsWith('OPCIONES:') || requisitoDb.opcionesExtra.startsWith('ABIERTA:')) {
+        if (!especialidadElegidaId) {
+          return res.status(400).json({ status: 'error', message: 'Este requisito exige que envíes especialidadElegidaId.' });
+        }
+
+        const espElegida = await prisma.especialidad.findUnique({ where: { id: Number(especialidadElegidaId) } });
+        if (!espElegida) return res.status(404).json({ status: 'error', message: 'La especialidad elegida no existe.' });
+
+        if (requisitoDb.opcionesExtra.startsWith('OPCIONES:')) {
+          const permitidas = requisitoDb.opcionesExtra.split(':')[1].split('|').map(s => s.trim().toLowerCase());
+          if (!permitidas.includes(espElegida.nombre.toLowerCase())) {
+            return res.status(403).json({ status: 'error', message: `Especialidad no permitida. Opciones: ${permitidas.join(', ')}` });
+          }
+        }
+        
+        if (requisitoDb.opcionesExtra.startsWith('ABIERTA:')) {
+          const categoriaRequerida = requisitoDb.opcionesExtra.split(':')[1].trim().toLowerCase();
+          if (espElegida.categoria.toLowerCase() !== categoriaRequerida) {
+            return res.status(403).json({ status: 'error', message: `La especialidad debe ser de la categoría: ${categoriaRequerida}` });
+          }
+        }
+        
+        especialidadAOtorgaId = espElegida.id;
+      }
     }
 
-    // 2. La Firma: Insertamos el registro de aprobación
+    // --- TRANSACCIÓN PRINCIPAL (Firma de Progreso) ---
     const nuevoProgreso = await prisma.progreso.create({
       data: {
         integranteId: Number(integranteId),
         requisitoId: Number(requisitoId),
         evaluadorId: Number(evaluadorId),
-        urlFotoRespaldo: urlFotoRespaldo ? String(urlFotoRespaldo) : null
+        urlFotoRespaldo
       }
     });
 
+    // Otorgamos el parche si corresponde
+    if (especialidadAOtorgaId) {
+      const yaTieneParche = await prisma.integranteEspecialidad.findFirst({
+        where: { integranteId: Number(integranteId), especialidadId: especialidadAOtorgaId }
+      });
+      if (!yaTieneParche) {
+        await prisma.integranteEspecialidad.create({
+          data: {
+            integranteId: Number(integranteId),
+            especialidadId: especialidadAOtorgaId,
+            evaluadorId: Number(evaluadorId)
+          }
+        });
+      }
+    }
+
+    // --- MOTOR DE GAMIFICACIÓN (XP ESTRICTO) ---
+    const xpGanados = requisitoDb.puntosXp; 
+    let mensajeExtra = '';
+
+    if (xpGanados > 0) {
+      await prisma.integrante.update({
+        where: { id: Number(integranteId) },
+        data: { xp: { increment: xpGanados } }
+      });
+      mensajeExtra += ` ¡El integrante ganó ${xpGanados} XP!`;
+    }
+
+    // --- INVESTIDURA AUTOMÁTICA ---
+    const claseId = requisitoDb.seccion.claseId;
+    const secciones = await prisma.seccionRequisito.findMany({ where: { claseId }, include: { requisitos: true } });
+    let totalRequisitos = 0;
+    secciones.forEach(sec => totalRequisitos += sec.requisitos.length);
+
+    const aprobados = await prisma.progreso.count({
+      where: { integranteId: Number(integranteId), requisito: { seccion: { claseId } } }
+    });
+
+    if (aprobados >= totalRequisitos && totalRequisitos > 0) {
+      await prisma.integranteClase.updateMany({
+        where: { integranteId: Number(integranteId), claseId: claseId, estado: 'EN_CURSO' },
+        data: { estado: 'INVESTIDO', fechaFin: new Date() }
+      });
+      mensajeExtra += ' ¡El integrante completó el 100% de la clase y está INVESTIDO!';
+    }
+
     return res.status(201).json({
       status: 'success',
-      message: '¡Requisito firmado y aprobado correctamente!',
+      message: 'Requisito firmado.' + mensajeExtra,
       data: nuevoProgreso
     });
 
   } catch (error) {
-    console.error('Error al firmar requisito:', error);
-    return res.status(500).json({ status: 'error', message: 'Fallo interno al registrar el progreso.' });
+    console.error(error);
+    return res.status(500).json({ status: 'error', message: 'Fallo al firmar.' });
   }
 };
 
@@ -102,5 +172,56 @@ export const obtenerProgreso = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Error al calcular progreso:', error);
     return res.status(500).json({ status: 'error', message: 'Fallo interno al calcular el progreso.' });
+  }
+};
+// 3. BUSCAR REQUISITOS PENDIENTES (Para el Frontend)
+export const obtenerRequisitosPendientes = async (req: AuthRequest, res: Response) => {
+  try {
+    const integranteId = Number(req.params.integranteId);
+    
+    // Buscamos al pibe para saber en qué clase está
+    const integrante = await prisma.integrante.findUnique({
+      where: { id: integranteId }
+    });
+
+    if (!integrante || !integrante.claseId) {
+      return res.status(400).json({ status: 'error', message: 'No tiene clase asignada.' });
+    }
+
+    // Traemos todo el manual de su clase, pero incluyendo si este pibe ya lo firmó
+    const secciones = await prisma.seccionRequisito.findMany({
+      where: { claseId: integrante.claseId },
+      include: {
+        requisitos: {
+          include: {
+            progresos: { where: { integranteId: integranteId } }
+          },
+          orderBy: { id: 'asc' }
+        }
+      },
+      orderBy: { orden: 'asc' }
+    });
+
+    // Filtramos para devolver SOLO los que no tienen firmas
+    const pendientes: any[] = [];
+    secciones.forEach(sec => {
+      sec.requisitos.forEach(req => {
+        if (req.progresos.length === 0) {
+          pendientes.push({
+            id: req.id,
+            numero: req.numero || '-',
+            descripcion: req.descripcion,
+            seccion: sec.titulo,
+            esEspecialidad: req.opcionesExtra ? true : false,
+            puntosXp: req.puntosXp
+          });
+        }
+      });
+    });
+
+    return res.status(200).json({ status: 'success', data: pendientes });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ status: 'error', message: 'Fallo al buscar pendientes.' });
   }
 };

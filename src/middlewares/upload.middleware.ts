@@ -53,7 +53,7 @@ const imageStorage = multer.diskStorage({
 // 3. Empaquetamos el escudo para imágenes
 export const uploadImagen = multer({
   storage: imageStorage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // Límite estricto de 2MB por foto
+  limits: { fileSize: 5 * 1024 * 1024 }, // Límite estricto de 5MB por foto
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);

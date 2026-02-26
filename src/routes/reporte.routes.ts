@@ -1,10 +1,13 @@
 import { Router } from 'express';
-import { obtenerReporteClub } from '../controllers/reporte.controller';
-import { verificarToken, verificarRol } from '../middlewares/auth.middleware';
+import { obtenerReporteClub, generarReporteInvestidura } from '../controllers/reporte.controller';
+import { verificarToken } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-// Ruta protegida: requiere token válido y que el rol sea REGIONAL
-router.get('/club/:clubId', verificarToken, verificarRol(['REGIONAL']), obtenerReporteClub);
+// Ruta de tu reporte en JSON
+router.get('/club/:clubId', verificarToken, obtenerReporteClub);
+
+// Ruta del nuevo reporte en Excel
+router.get('/investidura/club/:clubId', verificarToken, generarReporteInvestidura);
 
 export default router;

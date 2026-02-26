@@ -135,32 +135,53 @@ export const actualizarIntegrante = async (req: Request, res: Response) => {
   }
 };
 
-// 1. LECTURA: Ver los integrantes de un club específico
+// 1. LECTURA CON PAGINACIÓN Y BÚSQUEDA SECURE
 export const obtenerIntegrantesPorClub = async (req: AuthRequest, res: Response) => {
   try {
     const clubId = Number(req.params.clubId);
     const regionalId = req.usuario?.id;
 
-    // Escudo IDOR: Verificamos que el club le pertenezca a este Regional
+    // Capturamos parámetros de la URL (Ej: ?page=1&limit=10&search=Juan)
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const search = req.query.search ? String(req.query.search) : '';
+    const skip = (page - 1) * limit;
+
     const clubMio = await prisma.club.findFirst({
       where: { id: clubId, regionalId: Number(regionalId) }
     });
 
-    if (!clubMio) {
-      return res.status(403).json({ status: 'error', message: 'No tenés permisos para ver este club.' });
-    }
+    if (!clubMio) return res.status(403).json({ status: 'error', message: 'No tenés permisos.' });
 
-    const integrantes = await prisma.integrante.findMany({
-      where: { clubId: clubId },
-      include: {
-        clase: true // Traemos también los datos de la clase actual si es que ya tiene una
-      }
+    // Armamos el filtro de búsqueda dinámico
+    const filtroBusqueda = search ? {
+      OR: [
+        { nombre: { contains: search, mode: 'insensitive' as const } },
+        { apellido: { contains: search, mode: 'insensitive' as const } }
+      ]
+    } : {};
+
+    // Buscamos el total para que el Frontend sepa cuántas páginas hay
+    const total = await prisma.integrante.count({
+      where: { clubId: clubId, ...filtroBusqueda }
     });
 
-    return res.status(200).json({ status: 'success', data: integrantes });
+    // Traemos solo los de la página solicitada
+    const integrantes = await prisma.integrante.findMany({
+      where: { clubId: clubId, ...filtroBusqueda },
+      skip: skip,
+      take: limit,
+      orderBy: { apellido: 'asc' },
+      include: { clase: true }
+    });
+
+    return res.status(200).json({ 
+      status: 'success', 
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      data: integrantes 
+    });
   } catch (error) {
-    console.error('Error al obtener integrantes:', error);
-    return res.status(500).json({ status: 'error', message: 'Fallo interno al leer los integrantes.' });
+    return res.status(500).json({ status: 'error', message: 'Fallo al leer integrantes.' });
   }
 };
 
@@ -199,5 +220,56 @@ export const asignarClase = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Error al asignar clase:', error);
     return res.status(500).json({ status: 'error', message: 'Fallo interno al asignar la clase.' });
+  }
+};
+
+// 3. LECTURA: La Banda Virtual (Ver todos los logros de un integrante)
+export const obtenerBandaVirtual = async (req: AuthRequest, res: Response) => {
+  try {
+    const integranteId = Number(req.params.integranteId);
+
+    const especialidadesGanadas = await prisma.integranteEspecialidad.findMany({
+      where: { integranteId: integranteId },
+      include: { especialidad: true },
+      orderBy: { fechaAprobacion: 'desc' }
+    });
+
+    const maestriasGanadas = await prisma.integranteMaestria.findMany({
+      where: { integranteId: integranteId },
+      include: { maestria: true },
+      orderBy: { fechaAprobacion: 'desc' }
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        totalEspecialidades: especialidadesGanadas.length,
+        especialidades: especialidadesGanadas,
+        totalMaestrias: maestriasGanadas.length,
+        maestrias: maestriasGanadas
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: 'Fallo al leer la banda virtual.' });
+  }
+};
+
+// 4. RANKING REGIONAL (TOP 10 XP)
+export const obtenerRankingRegional = async (req: AuthRequest, res: Response) => {
+  try {
+    const regionalId = req.usuario?.id;
+
+    const topIntegrantes = await prisma.integrante.findMany({
+      where: { club: { regionalId: Number(regionalId) } },
+      orderBy: { xp: 'desc' },
+      take: 10, // Trae solo a los 10 mejores
+      select: {
+        id: true, nombre: true, apellido: true, xp: true, club: { select: { nombre: true } }
+      }
+    });
+
+    return res.status(200).json({ status: 'success', data: topIntegrantes });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: 'Fallo al generar ranking.' });
   }
 };
