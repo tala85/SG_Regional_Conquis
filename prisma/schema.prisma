@@ -8,11 +8,12 @@ datasource db {
 }
 
 model Usuario {
-  id                            Int        @id @default(autoincrement())
-  nombre                        String
-  email                         String     @unique
-  password                      String
-  rol                           Rol
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  nombre    String
+  rol       String   @default("DIRECTOR") // "DIRECTOR" o "REGIONAL"
+  clubId    Int?     // <-- NUEVO: Para saber de qué club es director
   division                      String     @default("DSA")
   pais                          String
   provincia                     String
@@ -57,6 +58,7 @@ model Integrante {
   especialidades IntegranteEspecialidad[]
   maestrias IntegranteMaestria[]
   xp              Int          @default(0) // Puntos de experiencia para el sistema Conquis+
+  avatarUrl       String?  // <-- NUEVO: Para guardar la ruta de su foto de perfil
 }
 
 model Clase {

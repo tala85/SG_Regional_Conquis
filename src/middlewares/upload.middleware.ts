@@ -58,7 +58,7 @@ export const uploadImagen = multer({
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
-      cb(new Error('Error de seguridad: Solo se permiten archivos de imagen (JPG, PNG).'));
+      cb(new Error('Error de seguridad: Solo se permiten archivos de imagen, como maximo 5mb (JPG, PNG).'));
     }
   }
 });

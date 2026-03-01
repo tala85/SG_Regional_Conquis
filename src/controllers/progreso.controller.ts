@@ -225,3 +225,89 @@ export const obtenerRequisitosPendientes = async (req: AuthRequest, res: Respons
     return res.status(500).json({ status: 'error', message: 'Fallo al buscar pendientes.' });
   }
 };
+
+// 4. NUEVO: ESTADÍSTICAS DE PROGRESO (Para la barra visual)
+export const obtenerEstadisticasProgreso = async (req: AuthRequest, res: Response) => {
+  try {
+    const integranteId = Number(req.params.integranteId);
+    
+    // Buscamos al integrante y su clase
+    const integrante = await prisma.integrante.findUnique({ 
+      where: { id: integranteId }, include: { clase: true } 
+    });
+
+    if (!integrante || !integrante.claseId) {
+      return res.status(200).json({ status: 'success', data: { total: 0, aprobados: 0, porcentaje: 0, clase: 'Sin Clase' } });
+    }
+
+    // Contamos cuántos requisitos tiene su manual en total
+    const totalReq = await prisma.requisito.count({ 
+      where: { seccion: { claseId: integrante.claseId } } 
+    });
+
+    // Contamos cuántos ya le firmaste a este pibe
+    const aprobados = await prisma.progreso.count({ 
+      where: { integranteId } 
+    });
+
+    // Matemática simple para el porcentaje
+    const porcentaje = totalReq > 0 ? Math.round((aprobados / totalReq) * 100) : 0;
+
+    return res.status(200).json({ 
+      status: 'success', 
+      data: { total: totalReq, 
+        aprobados, 
+        porcentaje, 
+        clase: integrante.clase?.nombre || 'Sin Clase' } 
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ status: 'error', message: 'Fallo al calcular barra de progreso.' });
+  }
+};
+
+// NUEVO: CARGA MASIVA DE REQUISITOS (Adaptado a tu Schema exacto)
+export const cargarRequisitosMasivos = async (req: AuthRequest, res: Response) => {
+  try {
+    const { requisitos } = req.body; 
+    const rol = req.usuario?.rol;
+
+    if (rol !== 'REGIONAL') return res.status(403).json({ status: 'error', message: 'Solo Regionales pueden alterar el manual.' });
+
+    let contador = 0;
+    
+    // Iteramos sobre la lista que nos envíen por Apidog
+    for (const reqItem of requisitos) {
+       // 1. Buscamos la sección en SeccionRequisito usando "titulo" en lugar de "nombre"
+       let seccion = await prisma.seccionRequisito.findFirst({ 
+         where: { titulo: reqItem.seccionTitulo, claseId: Number(reqItem.claseId) } 
+       });
+       
+       // Si la sección no existe, la creamos (le ponemos orden 1 por defecto si no lo mandan)
+       if (!seccion) {
+          seccion = await prisma.seccionRequisito.create({ 
+            data: { titulo: reqItem.seccionTitulo, claseId: Number(reqItem.claseId), orden: reqItem.ordenSeccion || 1 } 
+          });
+       }
+       
+       // 2. Creamos el requisito enlazado
+       await prisma.requisito.create({
+          data: {
+             numero: reqItem.numero,
+             descripcion: reqItem.descripcion,
+             puntosXp: reqItem.puntosXp || 0,
+             seccionId: seccion.id,
+             // Valores obligatorios según tu schema:
+             esSubRequisito: reqItem.esSubRequisito || false,
+             requiereFoto: reqItem.requiereFoto || false
+          }
+       });
+       contador++;
+    }
+
+    return res.status(201).json({ status: 'success', message: `${contador} requisitos inyectados a la base de datos con éxito.` });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ status: 'error', message: 'Fallo al procesar la carga masiva.' });
+  }
+}

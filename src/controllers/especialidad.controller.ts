@@ -134,3 +134,13 @@ export const otorgarMaestria = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ status: 'error', message: 'Fallo al otorgar maestría.' });
   }
 };
+
+// LECTURA: Catálogo de Maestrías
+export const obtenerCatalogoMaestrias = async (req: AuthRequest, res: Response) => {
+  try {
+    const maestrias = await prisma.maestria.findMany({ orderBy: { nombre: 'asc' } });
+    return res.status(200).json({ status: 'success', data: maestrias });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: 'Fallo al leer maestrías.' });
+  }
+};

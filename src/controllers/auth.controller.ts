@@ -6,22 +6,27 @@ import prisma from '../config/db';
 // 1. REGISTRO SEGURO (Hasheando la contraseña)
 export const registrarUsuario = async (req: Request, res: Response) => {
   try {
-    const { nombre, email, password, rol, pais, provincia, campoMision, region } = req.body;
+    // Agregamos clubId a lo que recibimos del body
+    const { email, password, nombre, rol, clubId, pais = 'Argentina', provincia = 'Misiones', campoMision = 'Asociación Norte Argentina', region = 'Región' } = req.body;
 
-    // Generamos la sal y encriptamos la contraseña
+    const usuarioExistente = await prisma.usuario.findUnique({ where: { email } });
+    if (usuarioExistente) return res.status(400).json({ status: 'error', message: 'El correo ya está en uso.' });
+
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const passwordHasheada = await bcrypt.hash(password, salt);
 
     const nuevoUsuario = await prisma.usuario.create({
       data: {
-        nombre, email, rol, pais, provincia, campoMision, region,
-        password: hashedPassword // Guardamos el hash, NUNCA el texto plano
+        email, password: passwordHasheada, nombre,
+        rol: rol || 'DIRECTOR',
+        clubId: clubId ? Number(clubId) : null, // <-- LO GUARDAMOS ACÁ
+        pais, provincia, campoMision, region
       }
     });
 
-    return res.status(201).json({ status: 'success', message: 'Usuario registrado seguro.' });
+    return res.status(201).json({ status: 'success', message: 'Usuario creado.', data: { email: nuevoUsuario.email } });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: 'Error al registrar usuario.' });
+    return res.status(500).json({ status: 'error', message: 'Fallo al registrar usuario.' });
   }
 };
 
@@ -57,5 +62,41 @@ export const login = async (req: Request, res: Response) => {
 
   } catch (error) {
     return res.status(500).json({ status: 'error', message: 'Error en el login.' });
+  }
+};
+
+// NUEVO: SISTEMA DE LOGIN (CIBERSEGURIDAD)
+export const loginUsuario = async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    // 1. Buscamos si el correo existe
+    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    if (!usuario) {
+      return res.status(401).json({ status: 'error', message: 'Credenciales incorrectas.' });
+    }
+
+    // 2. Comparamos la contraseña encriptada (Ciberseguridad)
+    const passValida = await bcrypt.compare(password, usuario.password);
+    if (!passValida) {
+      return res.status(401).json({ status: 'error', message: 'Credenciales incorrectas.' });
+    }
+
+    // 3. Generamos el pase de entrada (Token) válido por 8 horas
+    const token = jwt.sign(
+      { id: usuario.id, rol: usuario.rol }, 
+      process.env.JWT_SECRET || 'super_secreto_desarrollo', 
+      { expiresIn: '8h' }
+    );
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Acceso autorizado.',
+      token,
+      data: { nombre: usuario.nombre, email: usuario.email, rol: usuario.rol }
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ status: 'error', message: 'Fallo interno en el servidor de autenticación.' });
   }
 };

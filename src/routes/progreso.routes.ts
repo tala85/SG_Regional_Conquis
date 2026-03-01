@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { firmarRequisito, obtenerProgreso, obtenerRequisitosPendientes } from '../controllers/progreso.controller';
+import { cargarRequisitosMasivos, firmarRequisito, obtenerEstadisticasProgreso, obtenerProgreso, obtenerRequisitosPendientes } from '../controllers/progreso.controller';
 import { verificarToken } from '../middlewares/auth.middleware';
 import { uploadImagen } from '../middlewares/upload.middleware';
 import { validarSchema } from '../middlewares/validator.middleware'; // NUEVO
@@ -16,4 +16,6 @@ router.post('/firmar',
 );
 
 router.get('/integrante/:integranteId/pendientes', verificarToken, obtenerRequisitosPendientes);
+router.get('/integrante/:integranteId/estadisticas', verificarToken, obtenerEstadisticasProgreso);
+router.post('/carga-masiva', verificarToken, cargarRequisitosMasivos);
 export default router;

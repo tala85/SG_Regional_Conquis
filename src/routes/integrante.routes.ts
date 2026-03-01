@@ -1,15 +1,16 @@
 import { Router } from 'express';
 import { verificarToken, verificarRol } from '../middlewares/auth.middleware'; // Importamos el middleware
-import { crearIntegrante, evaluarClaseCorrespondiente, obtenerAvanceClase, actualizarIntegrante, obtenerBandaVirtual, obtenerRankingRegional } from '../controllers/integrante.controller';
+import { crearIntegrante, evaluarClaseCorrespondiente, obtenerAvanceClase, actualizarIntegrante, obtenerBandaVirtual, obtenerRanking, obtenerMetricas, obtenerListaClubes, obtenerListaClases, crearClub, subirAvatar } from '../controllers/integrante.controller';
 import { uploadExcel } from '../middlewares/upload.middleware';
 import { importarIntegrantesExcel, descargarPlantillaExcel } from '../controllers/import.controller';
 import { obtenerIntegrantesPorClub, asignarClase } from '../controllers/integrante.controller';
 import { validarSchema } from '../middlewares/validator.middleware';
 import { asignarClaseSchema } from '../schemas/integrante.schema';
+import { uploadImagen } from '../middlewares/upload.middleware';
 
 const router = Router();
-
-router.get('/ranking', verificarToken, obtenerRankingRegional); // <-- AGREGAR ESTA LÍNEA ACÁ
+router.get('/ranking', verificarToken, obtenerRanking);
+router.get('/metricas', verificarToken, obtenerMetricas); // Nueva ruta de estadísticas
 router.get('/club/:clubId', verificarToken, obtenerIntegrantesPorClub);
 
 // Insertamos verificarToken en el medio. Funciona como un peaje.
@@ -35,5 +36,9 @@ router.patch(
 );
 
 router.get('/:integranteId/banda-virtual', verificarToken, obtenerBandaVirtual);
+router.get('/clubes/lista', verificarToken, obtenerListaClubes);
+router.get('/clases/lista', verificarToken, obtenerListaClases);
+router.post('/clubes', verificarToken, crearClub);
+router.post('/:id/avatar', verificarToken, uploadImagen.single('foto'), subirAvatar);
 
 export default router;
