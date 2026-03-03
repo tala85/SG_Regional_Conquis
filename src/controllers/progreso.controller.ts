@@ -113,7 +113,7 @@ export const firmarRequisito = async (req: AuthRequest, res: Response) => {
       mensajeExtra += ' ¡El integrante completó el 100% de la clase y está INVESTIDO!';
     }
 
-    return res.status(201).json({
+       return res.status(201).json({
       status: 'success',
       message: 'Requisito firmado.' + mensajeExtra,
       data: nuevoProgreso
@@ -212,8 +212,10 @@ export const obtenerRequisitosPendientes = async (req: AuthRequest, res: Respons
             numero: req.numero || '-',
             descripcion: req.descripcion,
             seccion: sec.titulo,
-            esEspecialidad: req.opcionesExtra ? true : false,
-            puntosXp: req.puntosXp
+            // Lógica corregida: Es especialidad si la palabra aparece en el título o descripción
+            esEspecialidad: req.descripcion.toLowerCase().includes('especialidad') || sec.titulo.toLowerCase().includes('especialidad'),
+            puntosXp: req.puntosXp,
+            opcionesExtra: req.opcionesExtra // <-- ¡ACÁ ESTÁ EL DATO CLAVE QUE NECESITA EL FRONTEND!
           });
         }
       });
@@ -224,7 +226,7 @@ export const obtenerRequisitosPendientes = async (req: AuthRequest, res: Respons
     console.error(error);
     return res.status(500).json({ status: 'error', message: 'Fallo al buscar pendientes.' });
   }
-};
+}
 
 // 4. NUEVO: ESTADÍSTICAS DE PROGRESO (Para la barra visual)
 export const obtenerEstadisticasProgreso = async (req: AuthRequest, res: Response) => {
@@ -266,7 +268,7 @@ export const obtenerEstadisticasProgreso = async (req: AuthRequest, res: Respons
   }
 };
 
-// NUEVO: CARGA MASIVA DE REQUISITOS (Adaptado a tu Schema exacto)
+// NUEVO: CARGA MASIVA DE REQUISITOS (Reforzada y Blindada)
 export const cargarRequisitosMasivos = async (req: AuthRequest, res: Response) => {
   try {
     const { requisitos } = req.body; 
@@ -276,38 +278,70 @@ export const cargarRequisitosMasivos = async (req: AuthRequest, res: Response) =
 
     let contador = 0;
     
-    // Iteramos sobre la lista que nos envíen por Apidog
+    // Iteramos sobre la lista del CSV
     for (const reqItem of requisitos) {
-       // 1. Buscamos la sección en SeccionRequisito usando "titulo" en lugar de "nombre"
+       // 1. BLINDAJE: Si la fila no tiene descripción o claseId, es una fila vacía del Excel. La ignoramos.
+       if (!reqItem.descripcion || !reqItem.claseId) continue;
+
+       // 2. Buscamos la sección asegurándonos de que los tipos sean correctos
        let seccion = await prisma.seccionRequisito.findFirst({ 
-         where: { titulo: reqItem.seccionTitulo, claseId: Number(reqItem.claseId) } 
+         where: { 
+           titulo: String(reqItem.seccionTitulo).trim(), 
+           claseId: Number(reqItem.claseId) 
+         } 
        });
        
-       // Si la sección no existe, la creamos (le ponemos orden 1 por defecto si no lo mandan)
        if (!seccion) {
-          seccion = await prisma.seccionRequisito.create({ 
-            data: { titulo: reqItem.seccionTitulo, claseId: Number(reqItem.claseId), orden: reqItem.ordenSeccion || 1 } 
-          });
+         seccion = await prisma.seccionRequisito.create({ 
+           data: { 
+             titulo: String(reqItem.seccionTitulo).trim(), 
+             claseId: Number(reqItem.claseId), 
+             orden: Number(reqItem.ordenSeccion) || 1 
+           } 
+         });
        }
        
-       // 2. Creamos el requisito enlazado
+       // 3. Conversión segura de Booleanos (verdadero/falso)
+       const esSub = String(reqItem.esSubRequisito).toLowerCase() === 'true' || reqItem.esSubRequisito === 1 || reqItem.esSubRequisito === 'VERDADERO';
+       const reqFoto = String(reqItem.requiereFoto).toLowerCase() === 'true' || reqItem.requiereFoto === 1 || reqItem.requiereFoto === 'VERDADERO';
+
+       // 4. Creamos el requisito forzando a Prisma a que reciba el tipo exacto
        await prisma.requisito.create({
-          data: {
-             numero: reqItem.numero,
-             descripcion: reqItem.descripcion,
-             puntosXp: reqItem.puntosXp || 0,
+         data: {
+             numero: String(reqItem.numero || '-'), // Lo forzamos a ser Texto
+             descripcion: String(reqItem.descripcion).trim(), // Lo forzamos a ser Texto
+             puntosXp: Number(reqItem.puntosXp) || 0, // Lo forzamos a ser Número
              seccionId: seccion.id,
-             // Valores obligatorios según tu schema:
-             esSubRequisito: reqItem.esSubRequisito || false,
-             requiereFoto: reqItem.requiereFoto || false
-          }
+             esSubRequisito: esSub, // Booleano procesado
+             requiereFoto: reqFoto, // Booleano procesado
+             opcionesExtra: reqItem.opcionesExtra ? String(reqItem.opcionesExtra).trim() : null
+         }
        });
        contador++;
     }
 
     return res.status(201).json({ status: 'success', message: `${contador} requisitos inyectados a la base de datos con éxito.` });
   } catch (error) {
-    console.error(error);
+    // ESTE console.error ES LA CLAVE: Imprime el error real en tu consola de VS Code
+    console.error("❌ ERROR FATAL EN CARGA MASIVA:", error);
     return res.status(500).json({ status: 'error', message: 'Fallo al procesar la carga masiva.' });
   }
 }
+
+// NUEVO: BOTÓN DE PÁNICO PARA LIMPIAR MANUALES
+export const limpiarManuales = async (req: AuthRequest, res: Response) => {
+  try {
+    const rol = req.usuario?.rol;
+    if (rol !== 'REGIONAL') return res.status(403).json({ status: 'error', message: 'Operación clasificada. Solo Regionales.' });
+
+    // Orden de purga crítico: 1ro el Progreso (Hijo), 2do Requisito (Padre), 3ro Seccion (Abuelo)
+    await prisma.progreso.deleteMany({});
+    await prisma.requisito.deleteMany({});
+    await prisma.seccionRequisito.deleteMany({});
+
+    return res.status(200).json({ status: 'success', message: 'Base de datos purgada. Manuales limpios.' });
+  } catch (error) {
+    console.error("Error al purgar manuales:", error);
+    return res.status(500).json({ status: 'error', message: 'Fallo al intentar limpiar la base de datos.' });
+  }
+};

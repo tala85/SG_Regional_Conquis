@@ -100,3 +100,44 @@ export const loginUsuario = async (req: Request, res: Response) => {
     return res.status(500).json({ status: 'error', message: 'Fallo interno en el servidor de autenticación.' });
   }
 };
+
+export const actualizarUsuario = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { nombre, email, rol, clubId } = req.body;
+
+    // LÓGICA DE NEGOCIO: Si es REGIONAL, anulamos el clubId.
+    const clubAsignado = rol === 'REGIONAL' ? null : (clubId ? Number(clubId) : null);
+
+    await prisma.usuario.update({
+      where: { id: Number(id) },
+      data: { nombre, email, rol, clubId: clubAsignado }
+    });
+    
+    return res.status(200).json({ status: 'success', message: 'Acceso actualizado' });
+  } catch (error) { 
+    return res.status(500).json({ status: 'error', message: 'Error al actualizar el usuario' }); 
+  }
+};
+
+// NUEVO: Obtener la lista de Usuarios/Directores cruzando los datos del club
+export const obtenerUsuarios = async (req: Request, res: Response) => {
+  try {
+    const usuarios = await prisma.usuario.findMany({
+      select: { id: true, nombre: true, email: true, rol: true, clubId: true },
+      orderBy: { rol: 'desc' }
+    });
+    
+    // Buscamos los clubes para poder mostrar el nombre del club y no solo el ID
+    const clubes = await prisma.club.findMany(); 
+    
+    const data = usuarios.map(u => ({
+      ...u,
+      club: clubes.find(c => c.id === u.clubId) || null
+    }));
+
+    return res.status(200).json({ status: 'success', data });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: 'Error al obtener usuarios' });
+  }
+};

@@ -4,140 +4,130 @@ import prisma from '../config/db';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import ExcelJS from 'exceljs';
 
+// ==========================================
+// 1. IMPORTAR INTEGRANTES DESDE EXCEL
+// ==========================================
 export const importarIntegrantesExcel = async (req: AuthRequest, res: Response) => {
   try {
     const regionalId = req.usuario?.id;
+    if (!req.file) return res.status(400).json({ status: 'error', message: 'No se detectó archivo.' });
 
-    if (!req.file) {
-      return res.status(400).json({ status: 'error', message: 'No se detectó ningún archivo Excel.' });
-    }
-
-    // 1. Armamos el Diccionario Traductor: Buscamos tus clubes y los mapeamos (ej: "Central Posadas" -> ID 1)
-    const misClubes = await prisma.club.findMany({
-      where: { regionalId: Number(regionalId) }
-    });
+    const misClubes = await prisma.club.findMany({ where: { regionalId: Number(regionalId) } });
+    const misClases = await prisma.clase.findMany();
     
     const mapaClubes = new Map();
+    const mapaClases = new Map();
     misClubes.forEach(club => mapaClubes.set(club.iglesia, club.id));
+    misClases.forEach(clase => mapaClases.set(clase.nombre, clase.id));
 
-    // 2. Leemos el Excel
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
     const hoja = workbook.Sheets[workbook.SheetNames[0]];
     const datosExcel: any[] = XLSX.utils.sheet_to_json(hoja);
 
-    if (datosExcel.length === 0) {
-       return res.status(400).json({ status: 'error', message: 'El Excel está vacío.' });
-    }
+    if (datosExcel.length === 0) return res.status(400).json({ status: 'error', message: 'El Excel está vacío.' });
 
-    // 3. Mapeo y Traducción: Convertimos las filas de Excel a datos para la Base de Datos
-    const datosParaInsertar = [];
+    let insertados = 0;
 
     for (const fila of datosExcel) {
-      const nombreIglesiaExcel = String(fila.Club);
+      const nombreIglesiaExcel = String(fila.Club || '').trim();
       const clubIdTraducido = mapaClubes.get(nombreIglesiaExcel);
+      
+      const nombreClaseExcel = String(fila.Clase || '').trim();
+      const claseIdTraducida = mapaClases.get(nombreClaseExcel);
 
-      // Escudo de seguridad: Si el director escribió un club inventado, rebotamos todo
-      if (!clubIdTraducido) {
-        return res.status(400).json({ 
-          status: 'error', 
-          message: `Error en Excel: El club "${nombreIglesiaExcel}" no existe o no te pertenece. Deteniendo importación.` 
-        });
+      if (!clubIdTraducido) continue; 
+
+      // 🛡️ SANITIZACIÓN DE DATOS (Ciberseguridad)
+      // Agarra lo que venga, le borra todo lo que NO sea un número (letras, puntos, comas) y lo pasa a entero.
+      const dniRaw = String(fila.DNI || '').replace(/\D/g, ''); 
+      const dniEntero = parseInt(dniRaw, 10);
+
+      // Si después de limpiar no quedó un número válido, rebotamos a este integrante
+      if (!dniEntero || isNaN(dniEntero)) {
+        console.warn(`Se omitió a ${fila.Nombre} ${fila.Apellido} por no tener un DNI válido.`);
+        continue; 
       }
 
-      datosParaInsertar.push({
-        nombre: String(fila.Nombre),
-        apellido: String(fila.Apellido),
-        fechaNacimiento: new Date(fila.FechaNacimiento), 
-        funcion: String(fila.Funcion),
-        clubId: clubIdTraducido
-      });
+      try {
+        const nuevoIntegrante = await prisma.integrante.create({
+          data: {
+            dni: dniEntero, // <-- Ahora sí, pasamos un número entero limpio
+            nombre: String(fila.Nombre),
+            apellido: String(fila.Apellido),
+            fechaNacimiento: new Date(fila.FechaNacimiento), 
+            funcion: String(fila.Funcion),
+            clubId: clubIdTraducido,
+            claseId: claseIdTraducida || null
+          }
+        });
+
+        if (claseIdTraducida) {
+          await prisma.integranteClase.create({
+            data: { integranteId: nuevoIntegrante.id, claseId: claseIdTraducida, estado: 'EN_CURSO' }
+          });
+        }
+        insertados++;
+      } catch (e) {
+        console.warn(`Error insertando a ${fila.Nombre} (DNI: ${dniEntero}). ¿Quizás el DNI ya existe?`, e);
+      }
     }
 
-    // 4. Inserción Masiva Transaccional
-    const resultado = await prisma.integrante.createMany({
-      data: datosParaInsertar,
-      skipDuplicates: true
-    });
-
-    return res.status(201).json({
-      status: 'success',
-      message: `¡Misión Cumplida! Se importaron ${resultado.count} integrantes al sistema.`
-    });
+    return res.status(201).json({ status: 'success', message: `¡Se importaron ${insertados} integrantes con DNI válido!` });
 
   } catch (error) {
     console.error('Error procesando el Excel:', error);
-    return res.status(500).json({ status: 'error', message: 'Error interno al procesar la planilla.' });
+    return res.status(500).json({ status: 'error', message: 'Error al procesar la planilla.' });
   }
 };
 
 
-// (Asegurate de que las otras importaciones que ya tenías de XLSX y prisma sigan arriba)
-
+// ==========================================
+// 2. DESCARGAR PLANTILLA INTELIGENTE
+// ==========================================
 export const descargarPlantillaExcel = async (req: AuthRequest, res: Response) => {
   try {
     const regionalId = req.usuario?.id;
+    if (!regionalId) return res.status(401).json({ status: 'error', message: 'Usuario no autenticado.' });
 
-    if (!regionalId) {
-      return res.status(401).json({ status: 'error', message: 'Usuario no autenticado.' });
-    }
-
-    // 1. Buscamos los clubes asignados a este Regional (usamos el campo "iglesia" de tu schema)
-    const clubes = await prisma.club.findMany({
-      where: { regionalId: Number(regionalId) },
-      select: { iglesia: true } 
-    });
+    // 1. Buscamos Clubes y Clases para los menús desplegables
+    const clubes = await prisma.club.findMany({ where: { regionalId: Number(regionalId) }, select: { iglesia: true } });
+    const clases = await prisma.clase.findMany({ select: { nombre: true }, orderBy: { edadSugerida: 'asc' } });
 
     const nombresIglesias = clubes.map(c => c.iglesia);
+    const nombresClases = clases.map(c => c.nombre);
     
-    // Si no tenés clubes cargados, ponemos un mensaje de aviso en el desplegable
-    const opcionesClub = nombresIglesias.length > 0 
-      ? `"${nombresIglesias.join(',')}"` 
-      : '"Sin clubes asignados"';
+    const opcionesClub = nombresIglesias.length > 0 ? `"${nombresIglesias.join(',')}"` : '"Sin clubes"';
+    const opcionesClase = nombresClases.length > 0 ? `"${nombresClases.join(',')}"` : '"Sin clases"';
 
-    // 2. Creamos el archivo Excel en blanco en la memoria
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Carga_Integrantes');
 
-   // 3. Definimos las columnas y le clavamos el formato de fecha corta a la columna C
+    // 2. Definimos las nuevas columnas (Agregamos DNI y Clase)
     worksheet.columns = [
+      { header: 'DNI', key: 'dni', width: 15 },
       { header: 'Nombre', key: 'nombre', width: 20 },
       { header: 'Apellido', key: 'apellido', width: 20 },
-      { 
-        header: 'FechaNacimiento', 
-        key: 'fechaNacimiento', 
-        width: 18, 
-        style: { numFmt: 'dd/mm/yyyy' } // <--- Esto obliga a Excel a mostrarlo como Fecha Corta
-      },
+      { header: 'FechaNacimiento', key: 'fechaNacimiento', width: 18, style: { numFmt: 'dd/mm/yyyy' } },
       { header: 'Funcion', key: 'funcion', width: 22 },
-      { header: 'Club', key: 'club', width: 25 }
+      { header: 'Club', key: 'club', width: 25 },
+      { header: 'Clase', key: 'clase', width: 20 } // NUEVA COLUMNA
     ];
 
-    // 4. Inyectamos la Validación de Datos (Listas desplegables) para las primeras 100 filas
-    // Sacamos Aventurero y agregamos Conquis+
+    // 3. Inyectamos la Validación de Datos
     const funcionesPermitidas = '"Conquistador/a,Conquis+,Director,Director Asociado,Secretario/a,Tesorero/a,Capellan,Instructor,Consejero/a,Consejero/a Asociado,Lider"';
+    
     for (let i = 2; i <= 100; i++) {
-      // Lista desplegable para la Función (Columna D)
-      worksheet.getCell(`D${i}`).dataValidation = {
-        type: 'list',
-        allowBlank: true,
-        formulae: [funcionesPermitidas]
-      };
-
-      // Lista desplegable para el Club/Iglesia (Columna E)
+      worksheet.getCell(`E${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: [funcionesPermitidas] };
       if (nombresIglesias.length > 0) {
-        worksheet.getCell(`E${i}`).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [opcionesClub]
-        };
+        worksheet.getCell(`F${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: [opcionesClub] };
+      }
+      if (nombresClases.length > 0) {
+        worksheet.getCell(`G${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: [opcionesClase] };
       }
     }
 
-    // 5. Configuramos la respuesta HTTP para obligar al navegador/cliente a descargar el archivo
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=plantilla_inteligente.xlsx');
-
-    // 6. Escribimos el archivo y lo enviamos
     await workbook.xlsx.write(res);
     res.end();
 
@@ -147,6 +137,10 @@ export const descargarPlantillaExcel = async (req: AuthRequest, res: Response) =
   }
 };
 
+
+// ==========================================
+// 3. IMPORTAR REQUISITOS (ESTO NO SE TOCA)
+// ==========================================
 export const importarRequisitosExcel = async (req: Request, res: Response) => {
   try {
     if (!req.file) {

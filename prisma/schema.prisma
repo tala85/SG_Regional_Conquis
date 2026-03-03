@@ -45,6 +45,7 @@ model Club {
 
 model Integrante {
   id               Int               @id @default(autoincrement())
+  dni              Int               @unique
   nombre           String
   apellido         String
   fechaNacimiento  DateTime
@@ -137,6 +138,7 @@ model Progreso {
   integrante      Integrante @relation(fields: [integranteId], references: [id])
   requisito       Requisito  @relation(fields: [requisitoId], references: [id])
   evaluador       Usuario    @relation(fields: [evaluadorId], references: [id])
+  notas String?
 }
 
 // --- NUEVO MÓDULO: ESPECIALIDADES ---
@@ -201,4 +203,24 @@ model BitacoraAuditoria {
   fecha       DateTime @default(now())
 
   usuario     Usuario? @relation(fields: [usuarioId], references: [id])
+}
+
+// NUEVO: SISTEMA DE AUDITORÍA Y TRAZABILIDAD
+model Auditoria {
+  id          Int      @id @default(autoincrement())
+  fecha       DateTime @default(now())
+  accion      String   // Ej: "FIRMA_REQUISITO", "LOGIN_FALLIDO", "PURGA_MANUALES"
+  descripcion String   // Ej: "El Director Juan le firmó el requisito 5 a Pedro"
+  usuarioId   Int?     // El ID del director/regional que ejecutó la acción
+  ip          String?  // (Opcional) Para rastrear desde dónde se hizo
+}
+
+model EventoAgenda {
+  id          Int      @id @default(autoincrement())
+  titulo      String
+  descripcion String?
+  fecha       DateTime
+  clubId      Int?     // Opcional, por si es un evento general de toda la región
+  estado      String   @default("PENDIENTE") 
+  createdAt   DateTime @default(now())
 }

@@ -4,12 +4,19 @@ import { calcularEdadExacta } from '../utils/calcularEdad';
 import { AuthRequest } from '../middlewares/auth.middleware';
 
 // 1. CREAR INTEGRANTE
+// 1. CREAR INTEGRANTE
 export const crearIntegrante = async (req: AuthRequest, res: Response) => {
   try {
-    const { nombre, apellido, fechaNacimiento, funcion, clubId, claseId } = req.body;
+    // 1. Agregamos 'dni' acá para recibirlo del frontend
+    const { dni, nombre, apellido, fechaNacimiento, funcion, clubId, claseId } = req.body;
     const rol = req.usuario?.rol;
     const usuarioId = req.usuario?.id;
     
+    // 2. Validación: Si no mandan DNI, cortamos la ejecución
+    if (!dni) {
+      return res.status(400).json({ status: 'error', message: 'El DNI es un dato obligatorio.' });
+    }
+
     if (rol !== 'REGIONAL') {
       const clubMio = await prisma.club.findFirst({ where: { id: Number(clubId), regionalId: Number(usuarioId) } });
       if (!clubMio) {
@@ -19,6 +26,7 @@ export const crearIntegrante = async (req: AuthRequest, res: Response) => {
 
     const nuevoIntegrante = await prisma.integrante.create({
       data: {
+        dni: Number(dni), // 3. Lo convertimos a número antes de guardarlo
         nombre,
         apellido,
         fechaNacimiento: new Date(fechaNacimiento),
@@ -37,7 +45,7 @@ export const crearIntegrante = async (req: AuthRequest, res: Response) => {
     return res.status(201).json({ status: 'success', message: 'Conquistador alistado con éxito.', data: nuevoIntegrante });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ status: 'error', message: 'Fallo al crear integrante.' });
+    return res.status(500).json({ status: 'error', message: 'Fallo al crear integrante. Verificá que el DNI no esté duplicado.' });
   }
 };
 
@@ -84,54 +92,26 @@ export const evaluarClaseCorrespondiente = async (req: Request, res: Response) =
 };
 
 // 4. ACTUALIZAR INTEGRANTE (FUSIONADO Y MEJORADO)
-export const actualizarIntegrante = async (req: AuthRequest, res: Response) => {
+export const actualizarIntegrante = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, fechaNacimiento, funcion, clubId, claseId } = req.body;
-
-    const integranteExistente = await prisma.integrante.findUnique({ where: { id: Number(id) } });
-    if (!integranteExistente) return res.status(404).json({ status: 'error', message: 'El integrante no existe.' });
-
-    const integranteActualizado = await prisma.integrante.update({
+    const { nombre, apellido, funcion, claseId } = req.body;
+    
+    const actualizado = await prisma.integrante.update({
       where: { id: Number(id) },
       data: {
-        nombre: nombre !== undefined ? nombre : undefined,
-        apellido: apellido !== undefined ? apellido : undefined,
-        fechaNacimiento: fechaNacimiento ? new Date(fechaNacimiento) : undefined,
-        funcion: funcion !== undefined ? funcion : undefined,
-        clubId: clubId ? Number(clubId) : undefined,
-        claseId: claseId ? Number(claseId) : undefined 
-      }
+        nombre,
+        apellido,
+        funcion,
+        claseId: claseId ? Number(claseId) : null // Si mandan un ID, lo asigna.
+      },
+      include: { club: true, clase: true } // Devolvemos los datos completos
     });
 
-    return res.status(200).json({ status: 'success', message: 'Datos actualizados correctamente.', data: integranteActualizado });
-  } catch (error) {
-    console.error('Error al actualizar integrante:', error);
-    return res.status(500).json({ status: 'error', message: 'Fallo interno al actualizar.' });
-  }
-};
-
-// 5. BORRADO FORENSE EN CASCADA (NUEVO CON CORRECCIONES DE PRISMA)
-export const eliminarIntegrante = async (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const rol = req.usuario?.rol;
-
-    if (rol !== 'REGIONAL') {
-      return res.status(403).json({ status: 'error', message: 'Operación crítica: Solo un Regional puede dar de baja expedientes.' });
-    }
-
-    // Borrado en Cascada usando los nombres correctos de tus tablas
-    await prisma.progreso.deleteMany({ where: { integranteId: Number(id) } });
-    await prisma.integranteClase.deleteMany({ where: { integranteId: Number(id) } });
-    await prisma.integranteMaestria.deleteMany({ where: { integranteId: Number(id) } }); // Corregido
-    await prisma.integranteEspecialidad.deleteMany({ where: { integranteId: Number(id) } }); // Corregido
-    await prisma.integrante.delete({ where: { id: Number(id) } });
-
-    return res.status(200).json({ status: 'success', message: 'Expediente eliminado permanentemente.' });
+    return res.status(200).json({ status: 'success', data: actualizado, message: 'Expediente actualizado' });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ status: 'error', message: 'Fallo al intentar eliminar el registro.' });
+    return res.status(500).json({ status: 'error', message: 'Fallo al actualizar el expediente' });
   }
 };
 

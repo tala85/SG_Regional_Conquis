@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import prisma from '../config/db';
 import * as XLSX from 'xlsx';
@@ -142,5 +142,14 @@ export const obtenerCatalogoMaestrias = async (req: AuthRequest, res: Response) 
     return res.status(200).json({ status: 'success', data: maestrias });
   } catch (error) {
     return res.status(500).json({ status: 'error', message: 'Fallo al leer maestrías.' });
+  }
+};
+
+export const obtenerEspecialidades = async (req: Request, res: Response) => {
+  try {
+    const especialidades = await prisma.especialidad.findMany({ orderBy: { nombre: 'asc' } });
+    return res.status(200).json({ status: 'success', data: especialidades });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: 'Fallo al obtener el catálogo de especialidades.' });
   }
 };

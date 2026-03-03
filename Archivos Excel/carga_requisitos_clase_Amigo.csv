@@ -1,0 +1,33 @@
+﻿claseId;seccionTitulo;ordenSeccion;numero;descripcion;opcionesExtra;observaciones
+1;I. Generales;1;1;1. Tener como mínimo diez años de edad.;;
+1;I. Generales;1;2;2. Ser miembro activo del Club de Conquistadores.;;
+1;I. Generales;1;3;3. Memorizar y explicar el Voto y la Ley de los Conquistadores.;;
+1;I. Generales;1;4;4. Leer el libro del Curso de Lectura del año.;;
+1;I. Generales;1;5;​5. Leer el libro Vaso de barro.;;
+1;I. Generales;1;6;6. Participar activamente de la clase bíblica de su club.;;
+1;II. Descubrimiento espiritual ;2;1;"1. Memorizar y demostrar su conocimiento en:
+     a) Creación: Lo que Dios creó en cada día de la creación.
+     b) 10 Plagas: Qué plagas cayeron sobre Egipto.
+     c) 12 Tribus: El nombre de cada una de las tribus de Israel.
+     d) 39 libros de Antiguo Testamento y demostrar habilidad para encontrar cualquiera de ellos.";;
+1;II. Descubrimiento espiritual ;2;2;"2. Leer y explicar los siguientes versículos: Juan 3:16; Efesios 6:1-3; 2 Timoteo 3:16; Salmo 1.";;
+1;II. Descubrimiento espiritual ;2;3;3. Lectura bíblica;;
+1;III. Sirviendo a los demás ;3;1;1. Dedicar dos horas ayudando a alguien en su comunidad a través de dos de las siguientes actividades:;CHECKBOX:2:Visitar a alguien que necesita de amistad y orar con esa persona|Ofrecer y llevar alimento a alguien necesitado|Participar de un proyecto ecológico o educativo;
+1;III. Sirviendo a los demás ;3;2;2. Escribir una redacción de cómo ser un buen ciudadano en el hogar y en la escuela;;
+1;IV. Desarrollo de la amistad ;4;1;1. Mencionar diez cualidades de un buen amigo y presentar cuatro situaciones diarias en las que usted practicó la Regla de Oro de Mateo 7:12.;;
+1;IV. Desarrollo de la amistad ;4;2;2. Saber cantar el himno nacional de su país y conocer su historia. Saber el nombre del autor de la letra y de la música del himno.;;
+1;V. Salud y aptitud física ;5;1;1. Completar una de las siguientes especialidades:;ESPECIALIDADES:Natación - Principiante I, Educación física, Nudos y amarras, Seguridad básica en el agua;
+1;V. Salud y aptitud física ;5;2;"2. Utilizando la experiencia de Daniel:
+     a) Explicar los principios de temperancia que él defendió, o participar de una presentación o escenificación de Daniel.
+     b) Memorizar y explicar Daniel 1:8.
+     c) Escribir su compromiso personal de seguir un estilo de vida saludable.";;
+1;V. Salud y aptitud física ;5;3;3. Aprender los principios de una dieta saludable y ayudar a preparar un cuadro con los grupos básicos de alimentos.;;
+1;VI. Organización y liderazgo ;6;1;1. A través de la observación, acompañar todo el proceso del planeamiento hasta la ejecución de una caminata de 5 km.;;
+1;VII. Estudio de la naturaleza ;7;1;1. Completar una de las siguientes especialidades:;ESPECIALIDADES:Felinos,Perros,Mamíferos,Semillas,Aves domésticas;
+1;VII. Estudio de la naturaleza ;7;2;2. Aprender y demostrar una forma para purificar el agua y escribir un párrafo destacando el significado de Jesús como el Agua de Vida.;;
+1;VII. Estudio de la naturaleza ;7;3;3. Aprender y armar una tienda de campaña en un lugar apropiado.;;
+1;VIII. Arte de acampar ;8;1;"1. Demostrar cómo cuidar correctamente de una cuerda. Hacer y explicar el uso práctico de los siguientes nudos: Simple o Cote; Falso; Verdadero o Llano; Cirujano; As de guía; As de guía doble; Vuelta de escota; Margarita; Pescador; Ancla; Ballestrinque; Vuelta de gancho; Leñador; Grupo de calabrote";;
+1;VIII. Arte de acampar ;8;2;2. Completar la especialidad de Arte de Acampar.;;
+1;VIII. Arte de acampar ;8;3;3. Presentar en forma escrita diez reglas para una caminata y explicar qué hacer en caso que esté perdido.;;
+1;VIII. Arte de acampar ;8;4;4. Aprender las señales para seguir una pista. Prepara y seguir una pista con un mínimo de diez señales que también pueda ser seguida por otros.;;
+1;IX. Estilo de vida ;9;1;1. Completar una especialidad en el área de Artes y actividades manuales.;CATEGORIA:ARTES Y HABILIDADES MANUALES;
