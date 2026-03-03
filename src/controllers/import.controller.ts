@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import prisma from '../config/db';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import ExcelJS from 'exceljs';
+import path from 'path';
 
 // ==========================================
 // 1. IMPORTAR INTEGRANTES DESDE EXCEL
@@ -82,7 +83,7 @@ export const importarIntegrantesExcel = async (req: AuthRequest, res: Response) 
 
 
 // ==========================================
-// 2. DESCARGAR PLANTILLA INTELIGENTE
+// 2. DESCARGAR PLANTILLA INTELIGENTE (VERSIÓN HÍBRIDA)
 // ==========================================
 export const descargarPlantillaExcel = async (req: AuthRequest, res: Response) => {
   try {
@@ -100,40 +101,60 @@ export const descargarPlantillaExcel = async (req: AuthRequest, res: Response) =
     const opcionesClase = nombresClases.length > 0 ? `"${nombresClases.join(',')}"` : '"Sin clases"';
 
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Carga_Integrantes');
+    
+    // 2. MAGIA ACÁ: En vez de crear uno vacío, leemos tu archivo base
+    // process.cwd() nos asegura buscar desde la raíz del proyecto
+    const rutaPlantilla = path.join(process.cwd(), 'templates', 'Plantilla_Alta_Masiva.xlsx');
+    await workbook.xlsx.readFile(rutaPlantilla);
+    
+    // Agarramos la primera hoja de tu Excel
+    const worksheet = workbook.getWorksheet(1);
 
-    // 2. Definimos las nuevas columnas (Agregamos DNI y Clase)
-    worksheet.columns = [
-      { header: 'DNI', key: 'dni', width: 15 },
-      { header: 'Nombre', key: 'nombre', width: 20 },
-      { header: 'Apellido', key: 'apellido', width: 20 },
-      { header: 'FechaNacimiento', key: 'fechaNacimiento', width: 18, style: { numFmt: 'dd/mm/yyyy' } },
-      { header: 'Funcion', key: 'funcion', width: 22 },
-      { header: 'Club', key: 'club', width: 25 },
-      { header: 'Clase', key: 'clase', width: 20 } // NUEVA COLUMNA
-    ];
+    if (!worksheet) {
+        return res.status(500).json({ status: 'error', message: 'La plantilla base no tiene hojas.' });
+    }
 
-    // 3. Inyectamos la Validación de Datos
+    // 3. Inyectamos la Validación de Datos (Listas y Reglas)
     const funcionesPermitidas = '"Conquistador/a,Conquis+,Director,Director Asociado,Secretario/a,Tesorero/a,Capellan,Instructor,Consejero/a,Consejero/a Asociado,Lider"';
     
     for (let i = 2; i <= 100; i++) {
+      
+      // 🛡️ BARRERA 1: DNI (Columna A)
+      const celdaDni = worksheet.getCell(`A${i}`);
+      celdaDni.numFmt = '0'; // Obligamos a Excel a tratar la celda como número puro (mata las letras)
+      celdaDni.dataValidation = {
+        type: 'whole', // Tipo: Número Entero
+        operator: 'between',
+        formulae: [1000000, 99999999], // Rango: de 1 millón a 99 millones (7 u 8 dígitos)
+        allowBlank: true,
+        showErrorMessage: true,
+        errorStyle: 'error',
+        errorTitle: '🛑 ERROR DE SEGURIDAD',
+        error: 'El DNI debe tener 7 u 8 números. No se permiten letras, ni puntos, ni comas.'
+      };
+
+      // 🛡️ BARRERA 2: Listas Desplegables (Columnas E, F, G)
       worksheet.getCell(`E${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: [funcionesPermitidas] };
+      
       if (nombresIglesias.length > 0) {
         worksheet.getCell(`F${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: [opcionesClub] };
       }
+      
       if (nombresClases.length > 0) {
         worksheet.getCell(`G${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: [opcionesClase] };
       }
     }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=plantilla_inteligente.xlsx');
+    res.setHeader('Content-Disposition', 'attachment; filename=Plantilla_Oficial_Conquistadores.xlsx');
+    
+    // Mandamos tu Excel modificado
     await workbook.xlsx.write(res);
     res.end();
 
   } catch (error) {
     console.error('Error al generar la plantilla:', error);
-    return res.status(500).json({ status: 'error', message: 'Fallo interno al generar el Excel.' });
+    return res.status(500).json({ status: 'error', message: 'Fallo al procesar tu plantilla base. ¿Verificaste que exista en la carpeta templates?' });
   }
 };
 

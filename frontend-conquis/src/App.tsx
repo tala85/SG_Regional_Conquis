@@ -72,6 +72,8 @@ function App() {
     try {
       const res = await axios.post('http://localhost:3000/api/auth/login', { email: loginEmail, password: loginPass });
       const tokenReal = res.data.token;
+      // 👇 AGREGAMOS ESTA LÍNEA 👇
+      localStorage.setItem('rolConquis', res.data.usuario.rol); // Guardamos el rol al entrar
       localStorage.setItem('tokenConquis', tokenReal); setToken(tokenReal);
     } catch (error: any) { setErrorLogin(error.response?.data?.message || 'Error de conexión.'); }
   };
@@ -282,6 +284,26 @@ function App() {
         }
       }
     });
+  };
+
+  // --- INGESTA INICIAL DE ESPECIALIDADES ---
+  const handleSubirEspecialidades = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('archivo', file);
+
+    try {
+      const res = await axios.post('http://localhost:3000/api/especialidades/importar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      alert(`✅ ¡Base Maestra Cargada!\n${res.data.message}`);
+      e.target.value = ''; // Limpiar el input
+      cargarCatalogosFormularios(); // Recargar los menús desplegables
+    } catch (error: any) {
+      alert(`❌ Error en la ingesta: ${error.response?.data?.message || 'Revisá la consola.'}`);
+    }
   };
 
   const handleLimpiarManuales = async () => {
@@ -571,6 +593,21 @@ function App() {
                 💾 Descargar Backup de Seguridad
               </button>
             </div>
+
+            {/* INGESTA MAESTRA (SOLO SYSADMIN / REGIONAL) */}
+            {localStorage.getItem('rolConquis') === 'REGIONAL' && (
+              <div className="bg-gray-900 rounded-xl shadow-lg p-6 border-t-4 border-red-500 flex flex-col justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-red-500 mb-2 uppercase flex items-center gap-2">🛠️ Setup Inicial (Solo Admin)</h2>
+                  <p className="text-xs text-gray-400 font-bold mb-4">Carga la base oficial de Especialidades y Maestrías (Excel de 500+ items). Solo debe ejecutarse al inicializar el servidor.</p>
+                  
+                  <label className="block w-full py-3 bg-red-900/30 border-2 border-dashed border-red-500 text-red-400 font-black text-center rounded cursor-pointer hover:bg-red-900/50 transition-colors">
+                    <input type="file" accept=".xlsx, .xls" onChange={handleSubirEspecialidades} className="hidden" />
+                    🔥 SUBIR DICCIONARIO OFICIAL (EXCEL)
+                  </label>
+                </div>
+              </div>
+            )}
 
             {/* TORRE DE CONTROL: USUARIOS Y DIRECTORES */}
             <div className="col-span-1 md:col-span-2 lg:col-span-3 bg-white rounded-xl shadow-lg p-6 border-t-4 border-gray-800 mt-4">

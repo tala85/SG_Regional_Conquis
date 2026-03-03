@@ -92,17 +92,14 @@ import bcrypt from 'bcryptjs'; // <-- Ojo, fijate de tener importado bcrypt arri
 
 const prisma = new PrismaClient();
 
-// ==========================================
+/// ==========================================
 // 🚀 INICIALIZADOR DEL SISTEMA (SEEDER)
 // ==========================================
 const inicializarSistema = async () => {
   try {
     const cantidadUsuarios = await prisma.usuario.count();
-    
-    // Si la base de datos está vacía, creamos al Regional Supremo
     if (cantidadUsuarios === 0) {
-      console.log('🌱 Base de datos vacía detectada. Creando superusuario inicial...');
-      
+      console.log('🌱 Base de datos vacía. Creando superusuario inicial...');
       const passwordHash = await bcrypt.hash('admin123', 10); 
       
       await prisma.usuario.create({
@@ -111,16 +108,39 @@ const inicializarSistema = async () => {
           email: 'admin@conquis.com',
           password: passwordHash,
           rol: 'REGIONAL',
-          // 👇 ACÁ ESTÁ LA MAGIA: Agregamos los campos obligatorios
           pais: 'Argentina',
           provincia: 'Misiones',
           campoMision: 'Asociación Norte Argentina', 
           region: 'Región 1' 
         }
       });
-      console.log('✅ Superusuario creado exitosamente.');
-      console.log('📧 Email: admin@conquis.com');
-      console.log('🔑 Pass: admin123');
+      console.log('✅ Superusuario creado: admin@conquis.com | admin123');
+    }
+
+    // 👇 ACÁ ESTÁ LA MAGIA PARA LAS CLASES 👇
+    const cantidadClases = await prisma.clase.count();
+    if (cantidadClases === 0) {
+      console.log('📚 Cargando Catálogo Oficial de Clases...');
+      await prisma.clase.createMany({
+        data: [
+          { nombre: 'Amigo', tipo: 'REGULAR', color: '#3B82F6', edadSugerida: 10 },
+          { nombre: 'Compañero', tipo: 'REGULAR', color: '#EF4444', edadSugerida: 11 },
+          { nombre: 'Explorador', tipo: 'REGULAR', color: '#22C55E', edadSugerida: 12 },
+          { nombre: 'Pionero', tipo: 'REGULAR', color: '#64748B', edadSugerida: 13 },
+          { nombre: 'Excursionista', tipo: 'REGULAR', color: '#8B5CF6', edadSugerida: 14 },
+          { nombre: 'Guía', tipo: 'REGULAR', color: '#EAB308', edadSugerida: 15 },
+          { nombre: 'Amigo de la naturaleza', tipo: 'AVANZADA', color: '#3B82F6', edadSugerida: 10 },
+          { nombre: 'Compañero de excurcionismo', tipo: 'AVANZADA', color: '#EF4444', edadSugerida: 11 },
+          { nombre: 'Explorador de campo y de bosque', tipo: 'AVANZADA', color: '#22C55E', edadSugerida: 12 },
+          { nombre: 'Pionero de nuevas fronteras', tipo: 'AVANZADA', color: '#64748B', edadSugerida: 13 },
+          { nombre: 'Excursionista en el bosque', tipo: 'AVANZADA', color: '#8B5CF6', edadSugerida: 14 },
+          { nombre: 'Guía de exploracion', tipo: 'AVANZADA', color: '#EAB308', edadSugerida: 15 },
+          { nombre: 'Conquis+ N1', tipo: 'NIVEL_1', color: '#1E40AF', edadSugerida: 16 },
+          { nombre: 'Conquis+ N2', tipo: 'NIVEL_2', color: '#581C87', edadSugerida: 17 },
+          
+        ]
+      });
+      console.log('✅ Catálogo de Clases inicializado.');
     }
   } catch (error) {
     console.error('⚠️ Error al inicializar el sistema:', error);
