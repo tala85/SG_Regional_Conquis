@@ -1,55 +1,45 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-// Extendemos la petición de Express para inyectarle los datos del usuario que descubrimos en el token
+// 1. Extendemos el Request de Express para que acepte nuestro usuario inyectado
 export interface AuthRequest extends Request {
-  usuario?: any;
+  usuario?: {
+    id: number;
+    rol: string;
+    clubId: number | null;
+  };
 }
 
+// 2. Middleware para verificar el Token JWT (Ya lo tenías, lo dejamos igual pero usando AuthRequest)
 export const verificarToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ status: 'error', message: 'Acceso denegado. Token no proporcionado.' });
+  }
+
+  const token = authHeader.split(' ')[1];
   try {
-    // 1. Buscamos el token en la cabecera (Header) de la petición
-    const authHeader = req.headers.authorization;
-    
-    // Si no mandan token o no tiene el formato "Bearer <token>", lo rebotamos
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ status: 'error', message: 'Acceso denegado. Faltan credenciales.' });
-    }
-
-    // 2. Extraemos solo el token (separamos la palabra "Bearer ")
-    const token = authHeader.split(' ')[1];
-
-    // 3. Verificamos la firma criptográfica usando la clave de tu .env
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
-
-    // 4. Si es válido, guardamos los datos del usuario en la petición y lo dejamos pasar
-    req.usuario = decoded;
+    const payload = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+    req.usuario = payload; // Inyectamos los datos decodificados (id y rol)
     next();
-    
   } catch (error) {
-    // Si el token fue modificado, es falso o ya expiró, salta este error
-    return res.status(403).json({ status: 'error', message: 'Token inválido o expirado.' });
+    return res.status(401).json({ status: 'error', message: 'Token inválido o expirado.' });
   }
 };
 
-// Middleware para Control de Acceso Basado en Roles (RBAC)
+// 3. El Patovica de los Roles (El que agregamos recién)
 export const verificarRol = (rolesPermitidos: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    
-    // Verificamos que el usuario exista en la petición (lo tuvo que haber puesto el verificarToken antes)
-    if (!req.usuario) {
-      return res.status(401).json({ status: 'error', message: 'Usuario no autenticado.' });
-    }
+    // Como usamos AuthRequest, TypeScript ya sabe que req.usuario existe
+    const rolUsuario = req.usuario?.rol; 
 
-    // Si el rol del usuario NO está en la lista de roles permitidos, lo rebotamos (Error 403 Forbidden)
-    if (!rolesPermitidos.includes(req.usuario.rol)) {
-      return res.status(403).json({ 
-        status: 'error', 
-        message: 'Acceso denegado: No tienes el nivel de privilegios necesario para ver este reporte.' 
+    if (!rolUsuario || !rolesPermitidos.includes(rolUsuario)) {
+      return res.status(403).json({
+        status: 'error',
+        message: `⛔ ACCESO DENEGADO. Nivel de seguridad insuficiente. Se requiere: ${rolesPermitidos.join(' o ')}.`
       });
     }
-
-    // Si el rol es correcto (ej: es REGIONAL), le abrimos la puerta para que vea el reporte
+    
     next();
   };
 };

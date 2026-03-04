@@ -1,14 +1,18 @@
 import { Router } from 'express';
-import { crearClub, obtenerMisClubes, eliminarClub } from '../controllers/club.controller';
+// 👈 Agregamos crearRegion y obtenerRegiones a la importación
+import { crearClub, obtenerMisClubes, eliminarClub, crearRegion, obtenerRegiones, actualizarClub } from '../controllers/club.controller';
 import { verificarToken, verificarRol } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-// Todas estas rutas requieren que el usuario esté logueado y sea REGIONAL
-router.use(verificarToken, verificarRol(['REGIONAL']));
+// --- RUTAS DE REGIONES (ZONAS) ---
+router.post('/regiones', verificarToken, verificarRol(['SYSADMIN']), crearRegion);
+router.get('/regiones', verificarToken, obtenerRegiones);
 
-router.post('/', crearClub);             // POST a /api/clubes
-router.get('/', obtenerMisClubes);       // GET a /api/clubes
-router.delete('/:id', eliminarClub);     // DELETE a /api/clubes/1
+// --- RUTAS DE CLUBES ---
+router.get('/', verificarToken, obtenerMisClubes);
+router.post('/', verificarToken, verificarRol(['SYSADMIN']), crearClub);
+router.delete('/:id', verificarToken, verificarRol(['SYSADMIN']), eliminarClub);
+router.put('/:id', verificarToken, verificarRol(['SYSADMIN']), actualizarClub);
 
 export default router;

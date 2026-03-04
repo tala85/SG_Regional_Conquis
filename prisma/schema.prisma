@@ -8,29 +8,40 @@ datasource db {
 }
 
 model Usuario {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  nombre    String
-  rol       String   @default("DIRECTOR") // "DIRECTOR" o "REGIONAL"
-  clubId    Int?     // <-- NUEVO: Para saber de qué club es director
-  division                      String     @default("DSA")
-  pais                          String
-  provincia                     String
-  campoMision                   String
-  region                        String
-  permiteInvestiduraCondicional Boolean    @default(true)
-  porcentajeCondicional         Int        @default(85)
-  clubes                        Club[]
+  id                            Int                      @id @default(autoincrement())
+  email                         String                   @unique
+  password                      String
+  nombre                        String
+  rol                           String                   @default("DIRECTOR") // "DIRECTOR", "REGIONAL" o "SYSADMIN"
+  integranteId                  Int?                     @unique
+  integrante                    Integrante?              @relation(fields: [integranteId], references: [id])
+  clubId                        Int?
+  club                          Club?                    @relation(fields: [clubId], references: [id])
+  division                      String                   @default("DSA")
+  pais                          String?
+  provincia                     String?
+  campoMision                   String?
+  regionId                      Int?
+  region                        Region?                  @relation(fields: [regionId], references: [id])
+  permiteInvestiduraCondicional Boolean                  @default(true)
+  porcentajeCondicional         Int                      @default(85)
   progresosEvaluados            Progreso[]
-  especialidadesEvaluadas IntegranteEspecialidad[]
-  maestriasEvaluadas IntegranteMaestria[]
-  auditorias BitacoraAuditoria[]
+  especialidadesEvaluadas       IntegranteEspecialidad[]
+  maestriasEvaluadas            IntegranteMaestria[]
+  auditorias                    BitacoraAuditoria[]
 }
 
 enum Rol {
+  SYSADMIN
   REGIONAL
   DIRECTOR
+}
+
+model Region {
+  id         Int       @id @default(autoincrement())
+  nombre     String    @unique
+  clubes     Club[] // Una región agrupa muchos clubes
+  regionales Usuario[] // Una región agrupa a los directivos regionales
 }
 
 model Club {
@@ -38,28 +49,30 @@ model Club {
   nombre      String
   iglesia     String
   distrito    String
-  regionalId  Int
-  regional    Usuario      @relation(fields: [regionalId], references: [id])
+  regionId    Int?
+  region      Region?      @relation(fields: [regionId], references: [id])
   integrantes Integrante[]
+  directores  Usuario[] // Prisma necesita esto porque los Usuarios (Directores) tienen clubId
 }
 
 model Integrante {
-  id               Int               @id @default(autoincrement())
-  dni              Int               @unique
+  id               Int                      @id @default(autoincrement())
+  dni              Int                      @unique
   nombre           String
   apellido         String
   fechaNacimiento  DateTime
   funcion          String
   clubId           Int
-  club             Club              @relation(fields: [clubId], references: [id])
+  club             Club                     @relation(fields: [clubId], references: [id])
   claseId          Int? // Tiene el signo ? porque puede estar vacío al principio
-  clase            Clase?            @relation(fields: [claseId], references: [id])
+  clase            Clase?                   @relation(fields: [claseId], references: [id])
   progresos        Progreso[]
   integranteClases IntegranteClase[]
-  especialidades IntegranteEspecialidad[]
-  maestrias IntegranteMaestria[]
-  xp              Int          @default(0) // Puntos de experiencia para el sistema Conquis+
-  avatarUrl       String?  // <-- NUEVO: Para guardar la ruta de su foto de perfil
+  especialidades   IntegranteEspecialidad[]
+  maestrias        IntegranteMaestria[]
+  xp               Int                      @default(0) // Puntos de experiencia para el sistema Conquis+
+  avatarUrl        String?
+  usuario          Usuario?
 }
 
 model Clase {
@@ -77,8 +90,8 @@ enum TipoClase {
   REGULAR
   AVANZADA
   LIDERAZGO
-  NIVEL_1     // Agregado para Conquis+ (16 años)
-  NIVEL_2     // Agregado para Conquis+ (17 años)
+  NIVEL_1 // Agregado para Conquis+ (16 años)
+  NIVEL_2 // Agregado para Conquis+ (17 años)
 }
 
 model SeccionRequisito {
@@ -91,34 +104,34 @@ model SeccionRequisito {
 }
 
 model Requisito {
-  id               Int              @id @default(autoincrement())
+  id               Int     @id @default(autoincrement())
   seccionId        Int
-  numero           String?          // Guarda el "NumeroPunto" del Excel (ej: "1", "2a")
+  numero           String? // Guarda el "NumeroPunto" del Excel (ej: "1", "2a")
   descripcion      String
-  opcionesExtra    String?          // Guarda lo que venga en la columna "Opciones" (FIJA:, OPCIONES:, ABIERTA:)
-  esSubRequisito   Boolean          @default(false)
+  opcionesExtra    String? // Guarda lo que venga en la columna "Opciones" (FIJA:, OPCIONES:, ABIERTA:)
+  esSubRequisito   Boolean @default(false)
   requisitoPadreId Int?
-  requiereFoto     Boolean          @default(false)
+  requiereFoto     Boolean @default(false)
   grupoOpcionalId  String?
-  puntosXp         Int              @default(0) // Vale 0 para los regulares. Para Conquis+ tendrá valor.
+  puntosXp         Int     @default(0) // Vale 0 para los regulares. Para Conquis+ tendrá valor.
 
-  seccion          SeccionRequisito @relation(fields: [seccionId], references: [id])
-  requisitoPadre   Requisito?       @relation("SubRequisitos", fields: [requisitoPadreId], references: [id])
-  subRequisitos    Requisito[]      @relation("SubRequisitos")
-  progresos        Progreso[]
+  seccion        SeccionRequisito @relation(fields: [seccionId], references: [id])
+  requisitoPadre Requisito?       @relation("SubRequisitos", fields: [requisitoPadreId], references: [id])
+  subRequisitos  Requisito[]      @relation("SubRequisitos")
+  progresos      Progreso[]
 }
 
 model IntegranteClase {
-  id           Int        @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   integranteId Int
   claseId      Int
-  estado       String     @default("EN_CURSO")
-  fechaInicio  DateTime   @default(now())
-  
-  fechaFin     DateTime?  // <-- AGREGAR ESTA LÍNEA (El signo de interrogación significa que puede estar vacía al principio)
-  
-  integrante   Integrante @relation(fields: [integranteId], references: [id])
-  clase        Clase      @relation(fields: [claseId], references: [id])
+  estado       String   @default("EN_CURSO")
+  fechaInicio  DateTime @default(now())
+
+  fechaFin DateTime? // <-- AGREGAR ESTA LÍNEA (El signo de interrogación significa que puede estar vacía al principio)
+
+  integrante Integrante @relation(fields: [integranteId], references: [id])
+  clase      Clase      @relation(fields: [claseId], references: [id])
 }
 
 enum EstadoClase {
@@ -138,81 +151,81 @@ model Progreso {
   integrante      Integrante @relation(fields: [integranteId], references: [id])
   requisito       Requisito  @relation(fields: [requisitoId], references: [id])
   evaluador       Usuario    @relation(fields: [evaluadorId], references: [id])
-  notas String?
+  notas           String?
 }
 
 // --- NUEVO MÓDULO: ESPECIALIDADES ---
 
 model Especialidad {
-  id            Int                      @id @default(autoincrement())
-  nombre        String                   @unique // Evita duplicados en la base
-  categoria     String                   
-  colorFondo    String?                  @default("#FFFFFF")
-  vigente       Boolean                  @default(true) // EL INTERRUPTOR (Soft Delete)
-  integrantes   IntegranteEspecialidad[]
+  id          Int                      @id @default(autoincrement())
+  nombre      String                   @unique // Evita duplicados en la base
+  categoria   String
+  colorFondo  String?                  @default("#FFFFFF")
+  vigente     Boolean                  @default(true) // EL INTERRUPTOR (Soft Delete)
+  integrantes IntegranteEspecialidad[]
 }
 
 model IntegranteEspecialidad {
-  id              Int          @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   integranteId    Int
   especialidadId  Int
-  evaluadorId     Int          // Quién le firmó la especialidad
-  fechaAprobacion DateTime     @default(now())
-  
-  integrante      Integrante   @relation(fields: [integranteId], references: [id])
-  especialidad    Especialidad @relation(fields: [especialidadId], references: [id])
-  evaluador       Usuario      @relation(fields: [evaluadorId], references: [id])
+  evaluadorId     Int // Quién le firmó la especialidad
+  fechaAprobacion DateTime @default(now())
+
+  integrante   Integrante   @relation(fields: [integranteId], references: [id])
+  especialidad Especialidad @relation(fields: [especialidadId], references: [id])
+  evaluador    Usuario      @relation(fields: [evaluadorId], references: [id])
 
   // Un integrante no puede sacar la misma especialidad dos veces
-  @@unique([integranteId, especialidadId]) 
+  @@unique([integranteId, especialidadId])
 }
 
 // --- NUEVO MÓDULO: MAESTRÍAS ---
 
 model Maestria {
-  id            Int                  @id @default(autoincrement())
-  nombre        String               @unique
-  requisitos    String?              // Acá guardamos el texto explicativo de qué pide
-  vigente       Boolean              @default(true)
-  integrantes   IntegranteMaestria[]
+  id          Int                  @id @default(autoincrement())
+  nombre      String               @unique
+  requisitos  String? // Acá guardamos el texto explicativo de qué pide
+  vigente     Boolean              @default(true)
+  integrantes IntegranteMaestria[]
 }
 
 model IntegranteMaestria {
-  id              Int          @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   integranteId    Int
   maestriaId      Int
-  evaluadorId     Int          // Quién verificó y le firmó la maestría
-  fechaAprobacion DateTime     @default(now())
-  
-  integrante      Integrante   @relation(fields: [integranteId], references: [id])
-  maestria        Maestria     @relation(fields: [maestriaId], references: [id])
-  evaluador       Usuario      @relation(fields: [evaluadorId], references: [id])
+  evaluadorId     Int // Quién verificó y le firmó la maestría
+  fechaAprobacion DateTime @default(now())
 
-  @@unique([integranteId, maestriaId]) 
+  integrante Integrante @relation(fields: [integranteId], references: [id])
+  maestria   Maestria   @relation(fields: [maestriaId], references: [id])
+  evaluador  Usuario    @relation(fields: [evaluadorId], references: [id])
+
+  @@unique([integranteId, maestriaId])
 }
 
 // --- MÓDULO DE CIBERSEGURIDAD: AUDITORÍA ---
 
 model BitacoraAuditoria {
-  id          Int      @id @default(autoincrement())
-  usuarioId   Int?     // Quién disparó la acción (ID del Director/Regional)
-  metodo      String   // POST, PATCH, DELETE
-  ruta        String   // Ej: /api/progresos/firmar
+  id             Int      @id @default(autoincrement())
+  usuarioId      Int? // Quién disparó la acción (ID del Director/Regional)
+  metodo         String // POST, PATCH, DELETE
+  ruta           String // Ej: /api/progresos/firmar
   cuerpoPeticion String? // Qué datos mandó (Guardado como JSON en texto)
-  ip          String?  // Desde qué dirección de red atacó/operó
-  fecha       DateTime @default(now())
+  ip             String? // Desde qué dirección de red atacó/operó
+  fecha          DateTime @default(now())
 
-  usuario     Usuario? @relation(fields: [usuarioId], references: [id])
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
 }
 
 // NUEVO: SISTEMA DE AUDITORÍA Y TRAZABILIDAD
 model Auditoria {
   id          Int      @id @default(autoincrement())
   fecha       DateTime @default(now())
-  accion      String   // Ej: "FIRMA_REQUISITO", "LOGIN_FALLIDO", "PURGA_MANUALES"
-  descripcion String   // Ej: "El Director Juan le firmó el requisito 5 a Pedro"
-  usuarioId   Int?     // El ID del director/regional que ejecutó la acción
-  ip          String?  // (Opcional) Para rastrear desde dónde se hizo
+  accion      String // Ej: "FIRMA_REQUISITO", "LOGIN_FALLIDO", "PURGA_MANUALES"
+  descripcion String // Ej: "El Director Juan le firmó el requisito 5 a Pedro"
+  usuarioId   Int? // El ID del director/regional que ejecutó la acción
+  ip          String? // (Opcional) Para rastrear desde dónde se hizo
 }
 
 model EventoAgenda {
@@ -220,7 +233,7 @@ model EventoAgenda {
   titulo      String
   descripcion String?
   fecha       DateTime
-  clubId      Int?     // Opcional, por si es un evento general de toda la región
-  estado      String   @default("PENDIENTE") 
+  clubId      Int? // Opcional, por si es un evento general de toda la región
+  estado      String   @default("PENDIENTE")
   createdAt   DateTime @default(now())
 }

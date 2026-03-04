@@ -1,143 +1,334 @@
-import { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import prisma from '../config/db';
+import { Request, Response } from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import prisma from "../config/db";
+import { AuthRequest } from "../middlewares/auth.middleware";
 
-// 1. REGISTRO SEGURO (Hasheando la contraseña)
-export const registrarUsuario = async (req: Request, res: Response) => {
+// ==========================================
+// REGISTRO DE USUARIO (Con Creación en Cascada)
+// ==========================================
+export const registrarUsuario = async (req: AuthRequest, res: Response) => {
   try {
-    // Agregamos clubId a lo que recibimos del body
-    const { email, password, nombre, rol, clubId, pais = 'Argentina', provincia = 'Misiones', campoMision = 'Asociación Norte Argentina', region = 'Región' } = req.body;
+    // 1. Recibimos solo lo necesario para el acceso digital
+    const { email, password, nombre, rol, clubId, integranteId } = req.body;
+    const creadorRol = req.usuario?.rol;
 
-    const usuarioExistente = await prisma.usuario.findUnique({ where: { email } });
-    if (usuarioExistente) return res.status(400).json({ status: 'error', message: 'El correo ya está en uso.' });
+    // 2. Validaciones de Seguridad
+    if (
+      (rol === "REGIONAL" || rol === "SYSADMIN") &&
+      creadorRol !== "SYSADMIN"
+    ) {
+      return res.status(403).json({
+        status: "error",
+        message: "No tenés permisos para crear este nivel de usuario.",
+      });
+    }
 
-    const salt = await bcrypt.genSalt(10);
+    const usuarioExistente = await prisma.usuario.findUnique({
+      where: { email },
+    });
+    if (usuarioExistente)
+      return res
+        .status(400)
+        .json({ status: "error", message: "El correo ya está registrado." });
+
+    // 3. Hasheo de Password
+    const salt = await bcrypt.genSalt(12);
     const passwordHasheada = await bcrypt.hash(password, salt);
 
+    // 4. Lógica de asignación
+    const rolFinal = rol || "DIRECTOR";
+    // Si es REGIONAL no lleva clubId, si es DIRECTOR sí.
+    const clubAsignado =
+      rolFinal === "REGIONAL" || rolFinal === "SYSADMIN"
+        ? null
+        : clubId
+          ? Number(clubId)
+          : null;
+
+    // 5. CREACIÓN DEL USUARIO (Directa, sin cascada)
     const nuevoUsuario = await prisma.usuario.create({
       data: {
-        email, password: passwordHasheada, nombre,
-        rol: rol || 'DIRECTOR',
-        clubId: clubId ? Number(clubId) : null, // <-- LO GUARDAMOS ACÁ
-        pais, provincia, campoMision, region
-      }
+        email,
+        password: passwordHasheada,
+        nombre: String(nombre), // El nombre que mandamos desde el select
+        rol: rolFinal,
+        clubId: clubAsignado,
+        integranteId: integranteId ? Number(integranteId) : null, // El ID de la persona física
+      },
     });
 
-    return res.status(201).json({ status: 'success', message: 'Usuario creado.', data: { email: nuevoUsuario.email } });
+    return res.status(201).json({
+      status: "success",
+      message: "Acceso creado y vinculado correctamente.",
+      data: { email: nuevoUsuario.email },
+    });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: 'Fallo al registrar usuario.' });
+    console.error("Error en registro:", error);
+    return res
+      .status(500)
+      .json({ status: "error", message: "Fallo interno al crear el acceso." });
   }
 };
 
-// 2. LOGIN (Verificando hash y generando Token)
+// ==========================================
+// LOGIN
+// FIX: Se unificaron las dos funciones de login que existían
+// (login y loginUsuario). Se eliminó el fallback inseguro
+// 'super_secreto_desarrollo' en JWT_SECRET.
+// ==========================================
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    // A. Buscamos al usuario por su email
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
-    if (!usuario) {
-      return res.status(404).json({ status: 'error', message: 'Usuario no encontrado.' });
+    if (!email || !password) {
+      return res.status(400).json({
+        status: "error",
+        message: "Email y contraseña son requeridos.",
+      });
     }
 
-    // B. Comparamos la contraseña en texto plano con el hash de la base de datos
+    // FIX DE SEGURIDAD: Usamos un mensaje genérico siempre.
+    // Antes el sistema devolvía mensajes distintos para "usuario no encontrado"
+    // vs "contraseña incorrecta", lo que permite a un atacante enumerar usuarios.
+    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    if (!usuario) {
+      return res
+        .status(401)
+        .json({ status: "error", message: "Credenciales incorrectas." });
+    }
+
     const passwordValida = await bcrypt.compare(password, usuario.password);
     if (!passwordValida) {
-      return res.status(401).json({ status: 'error', message: 'Contraseña incorrecta.' });
+      return res
+        .status(401)
+        .json({ status: "error", message: "Credenciales incorrectas." });
     }
 
-    // C. Generamos el Token de acceso (JWT)
+    // FIX CRÍTICO: Se eliminó el fallback 'super_secreto_desarrollo'.
+    // Si JWT_SECRET no está definido en .env, el servidor debe fallar aquí
+    // y no silenciosamente usar una clave débil conocida.
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      console.error(
+        "FATAL: JWT_SECRET no está definido en las variables de entorno.",
+      );
+      return res.status(500).json({
+        status: "error",
+        message: "Error de configuración del servidor.",
+      });
+    }
+
     const token = jwt.sign(
-      { id: usuario.id, rol: usuario.rol }, // Payload (Datos útiles)
-      process.env.JWT_SECRET as string,     // Firma
-      { expiresIn: '8h' }                   // Tiempo de vida del token
+      { id: usuario.id, rol: usuario.rol, clubId: usuario.clubId },
+      secret,
+      { expiresIn: "8h" },
     );
 
     return res.status(200).json({
-      status: 'success',
-      token: token,
-      usuario: { nombre: usuario.nombre, rol: usuario.rol }
-    });
-
-  } catch (error) {
-    return res.status(500).json({ status: 'error', message: 'Error en el login.' });
-  }
-};
-
-// NUEVO: SISTEMA DE LOGIN (CIBERSEGURIDAD)
-export const loginUsuario = async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body;
-
-    // 1. Buscamos si el correo existe
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
-    if (!usuario) {
-      return res.status(401).json({ status: 'error', message: 'Credenciales incorrectas.' });
-    }
-
-    // 2. Comparamos la contraseña encriptada (Ciberseguridad)
-    const passValida = await bcrypt.compare(password, usuario.password);
-    if (!passValida) {
-      return res.status(401).json({ status: 'error', message: 'Credenciales incorrectas.' });
-    }
-
-    // 3. Generamos el pase de entrada (Token) válido por 8 horas
-    const token = jwt.sign(
-      { id: usuario.id, rol: usuario.rol }, 
-      process.env.JWT_SECRET || 'super_secreto_desarrollo', 
-      { expiresIn: '8h' }
-    );
-
-    return res.status(200).json({
-      status: 'success',
-      message: 'Acceso autorizado.',
+      status: "success",
+      message: "Acceso autorizado.",
       token,
-      data: { nombre: usuario.nombre, email: usuario.email, rol: usuario.rol }
+      usuario: {
+        nombre: usuario.nombre,
+        email: usuario.email,
+        rol: usuario.rol,
+      },
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ status: 'error', message: 'Fallo interno en el servidor de autenticación.' });
+    console.error("Error en login:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Error interno en el servidor de autenticación.",
+    });
   }
 };
 
-export const actualizarUsuario = async (req: Request, res: Response) => {
+// ==========================================
+// ACTUALIZAR USUARIO (Perfil, Password y Región)
+// ==========================================
+export const actualizarUsuario = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { nombre, email, rol, clubId } = req.body;
+    // Agregamos password y region a lo que recibimos
+    const { nombre, email, rol, clubId, password, regionId } = req.body;
 
-    // LÓGICA DE NEGOCIO: Si es REGIONAL, anulamos el clubId.
-    const clubAsignado = rol === 'REGIONAL' ? null : (clubId ? Number(clubId) : null);
+    if (!nombre || !email || !rol) {
+      return res.status(400).json({
+        status: "error",
+        message: "Nombre, email y rol son obligatorios.",
+      });
+    }
+
+    // LÓGICA DE NEGOCIO ACTUALIZADA:
+    const clubAsignado =
+      rol === "REGIONAL" || rol === "SYSADMIN"
+        ? null
+        : clubId
+          ? Number(clubId)
+          : null;
+
+    // 👈 Si es regional y mandaron la región, la convertimos a número
+    const regionAsignada =
+      rol === "REGIONAL" && regionId ? Number(regionId) : null;
+
+    // 🛡️ PREVENCIÓN DE ESCALADA DE PRIVILEGIOS
+    // Solo permitimos que se actualice el Rol o la Región si el que dispara la acción es el SYSADMIN.
+    const esSysadmin = req.usuario?.rol === "SYSADMIN";
+
+    // Si NO es Sysadmin, forzamos a que el rol y la zona sigan siendo los que ya tenía en la BD
+    const miPerfilActual = await prisma.usuario.findUnique({
+      where: { id: Number(id) },
+    });
+
+    const rolFinal = esSysadmin ? rol : miPerfilActual?.rol;
+    const regionFinal =
+      esSysadmin && rolFinal === "REGIONAL"
+        ? regionId
+          ? Number(regionId)
+          : null
+        : miPerfilActual?.regionId;
+    const clubFinal = esSysadmin
+      ? clubId
+        ? Number(clubId)
+        : null
+      : miPerfilActual?.clubId;
+
+    // Preparamos los datos base a actualizar, sanitizados
+    const datosActualizar: any = {
+      nombre,
+      email,
+      rol: rolFinal,
+      clubId: clubFinal,
+      regionId: regionFinal,
+    };
+
+    // 🛡️ BARRERA DE CRIPTOGRAFÍA: Si el usuario escribió una nueva contraseña, la encriptamos
+    if (password && password.trim() !== "") {
+      if (password.length < 8) {
+        return res.status(400).json({
+          status: "error",
+          message: "La nueva contraseña debe tener al menos 8 caracteres.",
+        });
+      }
+      const salt = await bcrypt.genSalt(12);
+      datosActualizar.password = await bcrypt.hash(password, salt);
+    }
 
     await prisma.usuario.update({
       where: { id: Number(id) },
-      data: { nombre, email, rol, clubId: clubAsignado }
+      data: datosActualizar,
     });
-    
-    return res.status(200).json({ status: 'success', message: 'Acceso actualizado' });
-  } catch (error) { 
-    return res.status(500).json({ status: 'error', message: 'Error al actualizar el usuario' }); 
+
+    return res
+      .status(200)
+      .json({ status: "success", message: "Perfil actualizado con éxito." });
+  } catch (error) {
+    console.error("Error actualizando usuario:", error);
+    return res
+      .status(500)
+      .json({ status: "error", message: "Error al actualizar el perfil." });
   }
 };
 
-// NUEVO: Obtener la lista de Usuarios/Directores cruzando los datos del club
-export const obtenerUsuarios = async (req: Request, res: Response) => {
+// ==========================================
+// OBTENER LISTA DE USUARIOS (Con Aislamiento RBAC Avanzado)
+// ==========================================
+export const obtenerUsuarios = async (req: AuthRequest, res: Response) => {
   try {
+    const rolUsuario = req.usuario?.rol;
+    const miUsuarioId = req.usuario?.id;
+
+    let filtro: any = {}; // Por defecto, SYSADMIN ve a todos
+
+    if (rolUsuario === "DIRECTOR") {
+      filtro = { id: miUsuarioId };
+    } else if (rolUsuario === "REGIONAL") {
+      // 🛡️ BARRERA CORREGIDA: Buscamos qué zona tiene este Regional
+      const miPerfil = await prisma.usuario.findUnique({
+        where: { id: Number(miUsuarioId) },
+      });
+
+      // Buscamos todos los clubes de ESA zona
+      const misClubes = await prisma.club.findMany({
+        where: { regionId: miPerfil?.regionId || -1 },
+      });
+      const misClubesIds = misClubes.map((c) => c.id);
+
+      // Le mostramos su propio perfil (id) y los directores que tengan clubId dentro de su zona
+      filtro = {
+        OR: [{ id: miUsuarioId }, { clubId: { in: misClubesIds } }],
+      };
+    }
+
     const usuarios = await prisma.usuario.findMany({
-      select: { id: true, nombre: true, email: true, rol: true, clubId: true },
-      orderBy: { rol: 'desc' }
+      where: filtro,
+      select: {
+        id: true,
+        nombre: true,
+        email: true,
+        rol: true,
+        clubId: true,
+        regionId: true,
+        region: { select: { nombre: true } },
+      },
+      orderBy: { rol: "desc" },
     });
-    
-    // Buscamos los clubes para poder mostrar el nombre del club y no solo el ID
-    const clubes = await prisma.club.findMany(); 
-    
-    const data = usuarios.map(u => ({
+
+    const clubes = await prisma.club.findMany();
+
+    const data = usuarios.map((u) => ({
       ...u,
-      club: clubes.find(c => c.id === u.clubId) || null
+      club: clubes.find((c) => c.id === u.clubId) || null,
     }));
 
-    return res.status(200).json({ status: 'success', data });
+    return res.status(200).json({ status: "success", data });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: 'Error al obtener usuarios' });
+    console.error("Error obteniendo usuarios:", error);
+    return res
+      .status(500)
+      .json({ status: "error", message: "Error al obtener usuarios." });
+  }
+};
+
+// ==========================================
+// ELIMINAR USUARIO (Solo Sysadmin)
+// ==========================================
+export const eliminarUsuario = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (req.usuario?.rol !== "SYSADMIN")
+      return res.status(403).json({ message: "No tenés permiso" });
+
+    await prisma.usuario.delete({ where: { id: Number(id) } });
+    res.json({ status: "success", message: "Usuario eliminado" });
+  } catch (error) {
+    res.status(500).json({ status: "error", message: "Error al eliminar" });
+  }
+};
+
+// ==========================================
+// RESETEAR PASSWORD (A una genérica: Conquis2026)
+// ==========================================
+export const resetearPassword = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (req.usuario?.rol !== "SYSADMIN")
+      return res.status(403).json({ message: "No tenés permiso" });
+
+    const salt = await bcrypt.genSalt(12);
+    const passwordDefault = await bcrypt.hash("Conquis2026", salt);
+
+    await prisma.usuario.update({
+      where: { id: Number(id) },
+      data: { password: passwordDefault },
+    });
+
+    res.json({
+      status: "success",
+      message: "Contraseña reseteada a: Conquis2026",
+    });
+  } catch (error) {
+    res.status(500).json({ status: "error", message: "Error al resetear" });
   }
 };

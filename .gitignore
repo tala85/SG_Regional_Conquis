@@ -1,3 +1,52 @@
-node_modules/
+# ====================================
+# ARCHIVOS DE ENTORNO — NUNCA SUBIR
+# ====================================
 .env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# ====================================
+# DEPENDENCIAS
+# ====================================
+node_modules/
+frontend-conquis/node_modules/
+
+# ====================================
+# BUILD / COMPILACIÓN
+# ====================================
 dist/
+build/
+frontend-conquis/dist/
+frontend-conquis/build/
+
+# ====================================
+# UPLOADS DE USUARIOS (fotos de perfil)
+# No subir archivos binarios al repo
+# ====================================
+uploads/
+!uploads/.gitkeep
+
+# ====================================
+# PRISMA
+# ====================================
+prisma/dev.db
+prisma/dev.db-journal
+
+# ====================================
+# LOGS Y TEMPORALES
+# ====================================
+*.log
+npm-debug.log*
+nodemon-debug.log*
+.DS_Store
+Thumbs.db
+
+# ====================================
+# IDE
+# ====================================
+.vscode/
+.idea/
+*.swp
+*.swo

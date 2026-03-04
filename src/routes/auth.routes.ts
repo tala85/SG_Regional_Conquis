@@ -1,29 +1,19 @@
 import { Router } from 'express';
-// Faltaba importar obtenerUsuarios acá:
-import { registrarUsuario, loginUsuario, actualizarUsuario, obtenerUsuarios } from '../controllers/auth.controller';
-import { verificarToken } from '../middlewares/auth.middleware'; 
-import rateLimit from 'express-rate-limit';
+import { login, registrarUsuario, actualizarUsuario, obtenerUsuarios, resetearPassword, eliminarUsuario } from '../controllers/auth.controller';
+import { verificarToken, verificarRol } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-// 🛡️ CIBERSEGURIDAD: Configuramos la protección contra Fuerza Bruta
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 5, // 5 intentos
-  message: { 
-    status: 'error', 
-    message: 'Demasiados intentos de acceso fallidos. Por seguridad, su IP ha sido bloqueada temporalmente. Intente nuevamente en 15 minutos.' 
-  },
-  standardHeaders: true, 
-  legacyHeaders: false, 
-});
+// 1. LOGIN: Es la única puerta abierta al público (No lleva verificarToken)
+router.post('/login', login);
 
-// Rutas de Autenticación
-router.post('/registro', registrarUsuario);
-router.post('/login', loginLimiter, loginUsuario);
+// 2. CREAR USUARIO: 🛡️ ACÁ ESTABA EL ERROR. Le agregamos verificarToken
+// Además, le decimos que solo SYSADMIN y REGIONAL pueden intentar crear cuentas
+router.post('/registro', verificarToken, verificarRol(['SYSADMIN', 'REGIONAL']), registrarUsuario);
 
-// Rutas de Gestión de Usuarios (Faltaba la ruta GET)
-router.get('/usuarios', verificarToken, obtenerUsuarios); // <-- ¡Esta es la que devuelve la lista!
+// 3. OBTENER Y ACTUALIZAR USUARIOS: También blindados
+router.get('/usuarios', verificarToken, obtenerUsuarios);
 router.put('/usuarios/:id', verificarToken, actualizarUsuario);
-
+router.delete('/usuario/:id', verificarToken, eliminarUsuario);
+router.put('/usuario/reset/:id', verificarToken, resetearPassword);
 export default router;

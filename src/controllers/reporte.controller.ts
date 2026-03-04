@@ -10,14 +10,29 @@ export const obtenerReporteClub = async (req: AuthRequest, res: Response) => {
     const regionalId = req.usuario?.id; // Capturamos quién hace la petición
 
     // Seguridad: Verificamos que el club le pertenezca a este usuario
+    const usuarioId = req.usuario?.id;
+    const rol = req.usuario?.rol;
+    const miPerfil = await prisma.usuario.findUnique({ where: { id: Number(usuarioId) } });
+
+    // 1. Buscamos el club Y LE PEDIMOS QUE INCLUYA LOS INTEGRANTES
     const club = await prisma.club.findUnique({
-      where: { id: clubId, regionalId: Number(regionalId) },
+      where: { id: Number(clubId) },
       include: {
         integrantes: {
-          include: { clase: true, progresos: true }
+          include: { clase: true, progresos: true } // Traemos las clases también por si el reporte lo usa
         }
       }
     });
+
+    if (!club) return res.status(404).json({ status: 'error', message: 'Club no encontrado.' });
+
+    // 2. 🛡️ BARRERA DE SEGURIDAD (RBAC)
+    if (rol === 'DIRECTOR' && club.id !== miPerfil?.clubId) {
+      return res.status(403).json({ status: 'error', message: 'Violación de acceso: Este club no es tuyo.' });
+    }
+    if (rol === 'REGIONAL' && club.regionId !== miPerfil?.regionId) {
+      return res.status(403).json({ status: 'error', message: 'Violación de acceso: Este club no es de tu zona.' });
+    }
 
     if (!club) {
       return res.status(403).json({ status: 'error', message: 'No tienes permisos o el club no existe.' });
@@ -59,7 +74,12 @@ export const generarReporteInvestidura = async (req: AuthRequest, res: Response)
     const regionalId = req.usuario?.id;
     const clubId = Number(req.params.clubId);
 
-    const clubMio = await prisma.club.findFirst({ where: { id: clubId, regionalId: Number(regionalId) } });
+    const clubMio = await prisma.club.findUnique({ where: { id: Number(clubId) } });
+    
+    // Y aplicamos la misma barrera de seguridad rápida
+    const miPerfilPDF = await prisma.usuario.findUnique({ where: { id: Number(req.usuario?.id) } });
+    if (req.usuario?.rol === 'DIRECTOR' && clubMio?.id !== miPerfilPDF?.clubId) throw new Error("Acceso denegado");
+    if (req.usuario?.rol === 'REGIONAL' && clubMio?.regionId !== miPerfilPDF?.regionId) throw new Error("Acceso denegado");
     if (!clubMio) return res.status(403).json({ status: 'error', message: 'No tienes permisos sobre este club.' });
 
     // Traemos a los que ya terminaron la tarjeta
