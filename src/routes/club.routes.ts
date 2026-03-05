@@ -1,6 +1,6 @@
 import { Router } from 'express';
 // 👈 Agregamos crearRegion y obtenerRegiones a la importación
-import { crearClub, obtenerMisClubes, eliminarClub, crearRegion, obtenerRegiones, actualizarClub } from '../controllers/club.controller';
+import { crearClub, obtenerMisClubes, eliminarClub, crearRegion, obtenerRegiones, actualizarClub, toggleEstadoClub } from '../controllers/club.controller';
 import { verificarToken, verificarRol } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -14,5 +14,6 @@ router.get('/', verificarToken, obtenerMisClubes);
 router.post('/', verificarToken, verificarRol(['SYSADMIN']), crearClub);
 router.delete('/:id', verificarToken, verificarRol(['SYSADMIN']), eliminarClub);
 router.put('/:id', verificarToken, verificarRol(['SYSADMIN']), actualizarClub);
+router.put('/:id/estado', verificarToken, toggleEstadoClub);
 
 export default router;

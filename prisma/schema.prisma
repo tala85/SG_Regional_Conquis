@@ -49,6 +49,7 @@ model Club {
   nombre      String
   iglesia     String
   distrito    String
+  activo      Boolean      @default(true)
   regionId    Int?
   region      Region?      @relation(fields: [regionId], references: [id])
   integrantes Integrante[]

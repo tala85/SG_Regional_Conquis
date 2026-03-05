@@ -175,3 +175,27 @@ export const actualizarClub = async (req: AuthRequest, res: Response) => {
       .json({ status: "error", message: "Fallo al actualizar el club." });
   }
 };
+// ==========================================
+// CAMBIAR ESTADO DEL CLUB (Baja/Alta Lógica)
+// ==========================================
+export const toggleEstadoClub = async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    if (req.usuario?.rol !== 'SYSADMIN') return res.status(403).json({ message: "Sin permisos" });
+
+    // Buscamos cómo está el club ahora
+    const club = await prisma.club.findUnique({ where: { id: Number(id) } });
+    if (!club) return res.status(404).json({ message: "Club no encontrado" });
+
+    // Invertimos el estado (si estaba en true pasa a false, y viceversa)
+    const clubActualizado = await prisma.club.update({
+      where: { id: Number(id) },
+      data: { activo: !club.activo }
+    });
+
+    res.json({ status: "success", message: `Club ${clubActualizado.activo ? 'Activado' : 'Inactivado'} correctamente` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: "error", message: "Error al cambiar estado" });
+  }
+};

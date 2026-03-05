@@ -81,6 +81,7 @@ interface Metricas {
 interface OpcionLista {
   id: string | number;
   nombre: string;
+  activo?: boolean;
   iglesia?: string;
   regionId?: string | number | null;
 }
@@ -505,6 +506,21 @@ function App() {
     window.print();
   };
 
+  const cambiarEstadoClub = async (id: number | string) => {
+    if (
+      window.confirm(
+        "¿Seguro que querés cambiar el estado de este club? (Los inactivos no aparecerán en los formularios).",
+      )
+    ) {
+      try {
+        await api.put(`/api/clubes/${id}/estado`);
+        cargarCatalogosFormularios(); // Recargamos todo para actualizar la vista
+      } catch (e) {
+        alert("Error al cambiar el estado del club.");
+      }
+    }
+  };
+
   // =============================================
   // ALTAS (Conquistador, Director, Club)
   // =============================================
@@ -734,13 +750,24 @@ function App() {
   if (!token) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 to-gray-900 flex flex-col items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
-          <div className="text-center mb-8">
-            <span className="text-5xl">🛡️</span>
-            <h1 className="text-2xl font-black text-gray-800 mt-4 tracking-wider uppercase">
-              SG Conquis Pro
-            </h1>
-            <p className="text-gray-500 font-semibold">Acceso Autorizado</p>
+        <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="text-center mb-8 flex flex-col items-center justify-center">
+            {/* Agregamos un flex row para que logo y texto estén en la misma línea */}
+            <div className="flex flex-row items-center justify-center gap-5 mb-8">
+              <img
+                src="/logo-conquis.png"
+                alt="Logo Conquistadores"
+                className="w-24 h-24 object-contain"
+              />
+              <div className="flex flex-col text-left">
+                <h1 className="text-4xl font-black text-blue-900 tracking-wider uppercase leading-none">
+                  SG Regional
+                </h1>
+                <p className="text-gray-500 font-bold tracking-widest uppercase text-sm mt-1">
+                  Acceso Autorizado
+                </p>
+              </div>
+            </div>
           </div>
           {errorLogin && (
             <div className="bg-red-100 text-red-800 p-3 rounded mb-4 text-sm font-bold border border-red-200">
@@ -791,8 +818,13 @@ function App() {
     <div className="min-h-screen bg-gray-100 flex flex-col">
       <nav className="bg-blue-900 text-white shadow-md p-4 print:hidden">
         <div className="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-4">
-          <div className="font-black text-xl tracking-wider flex items-center gap-2">
-            🛡️ <span className="hidden sm:inline">SG Conquis Pro</span>
+          <div className="font-black text-3xl tracking-wider flex items-center gap-3">
+            <img
+              src="/logo-conquis.png"
+              alt="Logo"
+              className="w-12 h-12 object-contain drop-shadow-sm"
+            />
+            <span className="hidden sm:inline">SG Regional</span>
           </div>
           <div className="space-x-1 sm:space-x-2 text-sm sm:text-base flex flex-wrap">
             <button
@@ -805,7 +837,7 @@ function App() {
               onClick={() => setVista("directorio")}
               className={`px-3 py-2 rounded font-bold transition-colors ${vista === "directorio" ? "bg-yellow-600" : "hover:bg-blue-800"}`}
             >
-              Directorio
+              Nómina Gral
             </button>
             <button
               onClick={() => setVista("gestion")}
@@ -990,7 +1022,7 @@ function App() {
           <div className="animate-fade-in">
             <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
               <h1 className="text-3xl font-bold text-gray-800 border-b-4 border-yellow-500 pb-2">
-                Directorio Regional
+                Integrantes
               </h1>
               <div className="w-full md:w-1/3">
                 <label className="block text-xs font-bold text-gray-500 uppercase">
@@ -1003,11 +1035,13 @@ function App() {
                   }
                   className="w-full p-2 border-2 border-gray-300 rounded font-bold"
                 >
-                  {clubesDisponibles.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nombre}
-                    </option>
-                  ))}
+                  {clubesDisponibles
+                    .filter((c: any) => c.activo !== false) // 🛡️ BARRERA: Solo mostramos los activos
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre}
+                      </option>
+                    ))}
                 </select>
               </div>
             </div>
@@ -1149,11 +1183,13 @@ function App() {
                     className="w-full p-2 border rounded bg-white text-sm"
                   >
                     <option value="">-- Seleccione club --</option>
-                    {clubesDisponibles.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nombre}
-                      </option>
-                    ))}
+                    {clubesDisponibles
+                      .filter((c: any) => c.activo !== false) // 🛡️ BARRERA: Solo mostramos los activos
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nombre}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div>
@@ -1194,14 +1230,24 @@ function App() {
                       <option value="CONSEJERO">Consejero</option>
                       <option value="INSTRUCTOR">Instructor</option>
                       <option value="SUBDIRECTOR">Subdirector</option>
-                      {/* 👇 MAGIA ACÁ: Habilitamos Director solo para Sysadmin */}
-                      {localStorage.getItem("rolConquis") === "SYSADMIN" && (
-                        <option
-                          value="DIRECTOR"
-                          className="font-bold text-blue-700"
-                        >
-                          Director
-                        </option>
+
+                      {/* 👇 MAGIA ACÁ: Habilitamos Director y Regional SOLO para Sysadmin */}
+                      {localStorage.getItem("rolConquis")?.toUpperCase() ===
+                        "SYSADMIN" && (
+                        <>
+                          <option
+                            value="DIRECTOR"
+                            className="font-bold text-blue-700"
+                          >
+                            Director
+                          </option>
+                          <option
+                            value="REGIONAL"
+                            className="font-bold text-purple-700"
+                          >
+                            Regional
+                          </option>
+                        </>
                       )}
                     </select>
                   </div>
@@ -1271,120 +1317,105 @@ function App() {
 
                     <div className="col-span-2 md:col-span-1">
                       <label className="block text-[10px] font-bold text-gray-700 uppercase mb-1">
-                        Asignar a Club *
+                        Asignar a Club / Staff *
                       </label>
-                      {altaDir.rol === "DIRECTOR" ? (
-                        <select
-                          required
-                          value={altaDir.clubId}
-                          onChange={async (e) => {
-                            const clubSeleccionado = e.target.value;
-                            setAltaDir({
-                              ...altaDir,
-                              clubId: clubSeleccionado,
-                              integranteId: "",
-                              nombre: "",
-                            });
-                            if (clubSeleccionado) {
-                              try {
-                                const res = await api.get(
-                                  `/api/integrantes/club/${clubSeleccionado}`,
-                                );
-                                setListaIntegrantes(res.data.data || []);
-                              } catch (err) {
-                                setListaIntegrantes([]);
-                              }
-                            } else {
+                      <select
+                        required
+                        value={altaDir.clubId}
+                        onChange={async (e) => {
+                          const clubSeleccionado = e.target.value;
+                          setAltaDir({
+                            ...altaDir,
+                            clubId: clubSeleccionado,
+                            integranteId: "",
+                            nombre: "",
+                          });
+                          if (clubSeleccionado) {
+                            try {
+                              const res = await api.get(
+                                `/api/integrantes/club/${clubSeleccionado}`,
+                              );
+                              setListaIntegrantes(res.data.data || []);
+                            } catch (err) {
                               setListaIntegrantes([]);
                             }
-                          }}
-                          className="w-full p-2 border border-blue-300 rounded text-sm bg-blue-50 font-bold"
-                        >
-                          <option value="">-- Seleccione club --</option>
-                          {clubesDisponibles
-                            .filter(
-                              (club) =>
-                                !listaDirectores.some(
-                                  (user) =>
-                                    user.rol === "DIRECTOR" &&
-                                    user.clubId === club.id,
-                                ),
-                            )
-                            .map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.nombre}
-                              </option>
-                            ))}
-                        </select>
-                      ) : (
-                        <span className="w-full p-2 border rounded text-xs bg-gray-100 text-gray-500 block text-center font-bold">
-                          Sin Club (Regional)
-                        </span>
-                      )}
+                          } else {
+                            setListaIntegrantes([]);
+                          }
+                        }}
+                        className="w-full p-2 border border-blue-300 rounded text-sm bg-blue-50 font-bold"
+                      >
+                        <option value="">-- Seleccione club --</option>
+                        {clubesDisponibles
+                          .filter(
+                            (club) =>
+                              // 🛡️ LÓGICA: Si es Regional, mostramos todos los clubes (para elegir el Staff).
+                              // Si es Director, ocultamos los clubes que ya tienen director.
+                              altaDir.rol === "REGIONAL" ||
+                              !listaDirectores.some(
+                                (user) =>
+                                  user.rol === "DIRECTOR" &&
+                                  user.clubId === club.id,
+                              ),
+                          )
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nombre}
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   </div>
 
                   <hr className="border-gray-200" />
 
-                  {/* 2. VINCULACIÓN DE IDENTIDAD */}
-                  {altaDir.rol === "DIRECTOR" ? (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded">
-                      <label className="block text-[10px] font-bold text-gray-700 uppercase mb-1">
-                        Vincular a Director Existente *
-                      </label>
-                      <select
-                        required
-                        value={altaDir.integranteId}
-                        onChange={(e) => {
-                          const idSeleccionado = e.target.value;
-                          // Buscamos el nombre del integrante para guardarlo en la tabla Usuario automáticamente sin pedirle al Sysadmin que lo tipee
-                          const integrante = listaIntegrantes.find(
-                            (i: any) => String(i.id) === idSeleccionado,
-                          );
-                          setAltaDir({
-                            ...altaDir,
-                            integranteId: idSeleccionado,
-                            nombre: integrante
-                              ? `${integrante.nombre} ${integrante.apellido}`
-                              : "",
-                          });
-                        }}
-                        className="w-full p-2 border border-blue-400 rounded bg-white text-xs font-bold"
-                      >
-                        <option value="">
-                          -- Elija al Director del club --
-                        </option>
-                        {listaIntegrantes
-                          .filter((int: any) => int.funcion === "DIRECTOR") // 👈 Filtramos para que solo aparezcan los que cargaste como Director
-                          .map((int: any) => (
-                            <option key={int.id} value={int.id}>
-                              {int.nombre} {int.apellido} - DNI: {int.dni}
-                            </option>
-                          ))}
-                      </select>
-                      <p className="text-[9px] text-gray-500 mt-1 italic">
-                        * Primero debe cargar al Director en el panel izquierdo.
-                      </p>
-                    </div>
-                  ) : (
-                    // Si es Regional, sí necesitamos un nombre a mano porque los Regionales no tienen DNI cargado en un club
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-700 uppercase mb-1">
-                        Nombre del Regional *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={altaDir.nombre}
-                        onChange={(e) =>
-                          setAltaDir({ ...altaDir, nombre: e.target.value })
-                        }
-                        className="w-full p-2 border border-gray-300 rounded text-sm bg-white"
-                        placeholder="Ej: Juan Pérez"
-                      />
-                    </div>
-                  )}
-
+                  {/* 2. VINCULACIÓN DE IDENTIDAD UNIFICADA */}
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+                    <label className="block text-[10px] font-bold text-gray-700 uppercase mb-1">
+                      Vincular a{" "}
+                      {altaDir.rol === "DIRECTOR" ? "Director" : "Regional"}{" "}
+                      Existente *
+                    </label>
+                    <select
+                      required
+                      value={altaDir.integranteId}
+                      onChange={(e) => {
+                        const idSeleccionado = e.target.value;
+                        const integrante = listaIntegrantes.find(
+                          (i: any) => String(i.id) === idSeleccionado,
+                        );
+                        setAltaDir({
+                          ...altaDir,
+                          integranteId: idSeleccionado,
+                          nombre: integrante
+                            ? `${integrante.nombre} ${integrante.apellido}`
+                            : "",
+                        });
+                      }}
+                      className="w-full p-2 border border-blue-400 rounded bg-white text-xs font-bold"
+                    >
+                      <option value="">
+                        -- Elija al integrante en nómina --
+                      </option>
+                      {listaIntegrantes
+                        .filter(
+                          (int: any) =>
+                            // 🛡️ LÓGICA: Si buscamos un Director, filtramos por función.
+                            // Si es Regional, traemos a todos los del "Staff Regional" cargados.
+                            altaDir.rol === "REGIONAL" ||
+                            int.funcion === "DIRECTOR",
+                        )
+                        .map((int: any) => (
+                          <option key={int.id} value={int.id}>
+                            {int.nombre} {int.apellido} - DNI: {int.dni}
+                          </option>
+                        ))}
+                    </select>
+                    <p className="text-[9px] text-gray-500 mt-1 italic">
+                      * Primero debe cargar a la persona en el panel de la
+                      izquierda.
+                    </p>
+                  </div>
                   <hr className="border-gray-200" />
 
                   {/* 3. DATOS DE ACCESO AL SISTEMA */}
@@ -1639,8 +1670,22 @@ function App() {
                             </>
                           ) : (
                             <>
+                              {/* COLUMNA NOMBRE CON INDICADOR DE ESTADO */}
                               <td className="p-3 font-bold text-gray-800">
-                                {club.nombre}
+                                <span
+                                  className={
+                                    club.activo === false
+                                      ? "line-through text-gray-400"
+                                      : ""
+                                  }
+                                >
+                                  {club.nombre}
+                                </span>
+                                {club.activo === false && (
+                                  <span className="ml-2 bg-red-100 text-red-700 text-[10px] px-1.5 py-0.5 rounded font-black">
+                                    INACTIVO
+                                  </span>
+                                )}
                               </td>
                               <td className="p-3 text-xs text-gray-600">
                                 {club.iglesia}
@@ -1652,12 +1697,30 @@ function App() {
                                   )?.nombre || "⚠️ Sin Asignar"}
                                 </span>
                               </td>
-                              <td className="p-3 text-center">
+
+                              {/* COLUMNA ACCIONES */}
+                              <td className="p-3 flex gap-2 justify-center">
+                                {/* Botón Editar original */}
                                 <button
                                   onClick={() => setClubEditando({ ...club })}
                                   className="text-blue-600 hover:text-blue-800 text-xs font-bold bg-blue-50 px-2 py-1 rounded"
                                 >
                                   ✏️ Editar
+                                </button>
+
+                                {/* 👇 NUEVO BOTÓN DE BAJA LÓGICA */}
+                                <button
+                                  onClick={() => cambiarEstadoClub(club.id)}
+                                  className={`text-xs font-bold px-2 py-1 rounded shadow-sm ${club.activo !== false ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-green-100 text-green-700 hover:bg-green-200"}`}
+                                  title={
+                                    club.activo !== false
+                                      ? "Inactivar Club"
+                                      : "Reactivar Club"
+                                  }
+                                >
+                                  {club.activo !== false
+                                    ? "🚫 Inactivar"
+                                    : "✅ Activar"}
                                 </button>
                               </td>
                             </>
@@ -1693,7 +1756,7 @@ function App() {
                     onChange={handleSubirExcelIntegrantes}
                     className="hidden"
                   />
-                  🚀 SUBIR EXCEL LLENO
+                  🚀 CARGAR EXCEL
                 </label>
               </div>
             </div>
@@ -1897,11 +1960,13 @@ function App() {
                                   className="border border-gray-300 rounded p-2 w-full text-xs font-bold bg-white"
                                 >
                                   <option value="">-- Sin Club --</option>
-                                  {clubesDisponibles.map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                      {c.nombre}
-                                    </option>
-                                  ))}
+                                  {clubesDisponibles
+                                    .filter((c: any) => c.activo !== false) // 🛡️ BARRERA: Solo mostramos los activos
+                                    .map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.nombre}
+                                      </option>
+                                    ))}
                                 </select>
                               ) : (
                                 <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-2 border rounded block w-full text-center">
@@ -2179,11 +2244,13 @@ function App() {
                     className="w-full p-2 border rounded bg-white text-sm"
                   >
                     <option value="">-- Evento General --</option>
-                    {clubesDisponibles.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nombre}
-                      </option>
-                    ))}
+                    {clubesDisponibles
+                      .filter((c: any) => c.activo !== false) // 🛡️ BARRERA: Solo mostramos los activos
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nombre}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div>
