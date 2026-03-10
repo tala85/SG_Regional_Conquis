@@ -29,6 +29,9 @@ model Usuario {
   especialidadesEvaluadas       IntegranteEspecialidad[]
   maestriasEvaluadas            IntegranteMaestria[]
   auditorias                    BitacoraAuditoria[]
+  // Relaciones de Mensajería
+  mensajesEnviados              Mensaje[]                @relation("MensajesEnviados")
+  mensajesRecibidos             Mensaje[]                @relation("MensajesRecibidos")
 }
 
 enum Rol {
@@ -237,4 +240,26 @@ model EventoAgenda {
   clubId      Int? // Opcional, por si es un evento general de toda la región
   estado      String   @default("PENDIENTE")
   createdAt   DateTime @default(now())
+}
+
+model Mensaje {
+  id         Int      @id @default(autoincrement())
+  asunto     String   @db.VarChar(150)
+  cuerpo     String   @db.Text
+  leido      Boolean  @default(false)
+  fechaEnvio DateTime @default(now())
+
+  // Soft Deletes: Banderas independientes para cada extremo
+  ocultoRemitente    Boolean @default(false)
+  ocultoDestinatario Boolean @default(false)
+
+  // Relaciones
+  remitenteId    Int
+  destinatarioId Int
+
+  remitente    Usuario @relation("MensajesEnviados", fields: [remitenteId], references: [id])
+  destinatario Usuario @relation("MensajesRecibidos", fields: [destinatarioId], references: [id])
+
+  @@index([destinatarioId])
+  @@index([remitenteId])
 }

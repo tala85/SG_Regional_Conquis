@@ -9,12 +9,10 @@ export const crearClub = async (req: AuthRequest, res: Response) => {
     const { nombre, iglesia, distrito, regionId } = req.body;
 
     if (!nombre || !iglesia || !regionId) {
-      return res
-        .status(400)
-        .json({
-          status: "error",
-          message: "Nombre, iglesia y Región son obligatorios.",
-        });
+      return res.status(400).json({
+        status: "error",
+        message: "Nombre, iglesia y Región son obligatorios.",
+      });
     }
 
     const nuevoClub = await prisma.club.create({
@@ -67,37 +65,42 @@ export const obtenerMisClubes = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// 3. BAJA: Eliminar un club (con protección IDOR)
+// 3. BAJA: Eliminar un club (Exclusivo SYSADMIN)
 export const eliminarClub = async (req: AuthRequest, res: Response) => {
   try {
-    const clubId = req.params.id;
-    const regionId = req.usuario?.id;
+    const clubId = Number(req.params.id);
+    const rolUsuario = req.usuario?.rol;
 
-    // Primero verificamos que el club exista Y te pertenezca
-    const clubExistente = await prisma.club.findFirst({
-      where: {
-        id: Number(clubId),
-        regionId: Number(regionId), // Prevención IDOR
-      },
+    // 🛡️ Defensa en profundidad: Revalidamos el rol acá por si falla el middleware
+    if (rolUsuario !== "SYSADMIN") {
+      return res.status(403).json({
+        status: "error",
+        message:
+          "Operación clasificada. Solo el Sysadmin puede eliminar un club completo.",
+      });
+    }
+
+    // Verificamos que el club exista antes de intentar borrarlo
+    const clubExistente = await prisma.club.findUnique({
+      where: { id: clubId },
     });
 
     if (!clubExistente) {
-      return res
-        .status(403)
-        .json({
-          status: "error",
-          message: "Acceso denegado o el club no existe.",
-        });
+      return res.status(404).json({
+        status: "error",
+        message: "El club no existe o ya fue eliminado.",
+      });
     }
 
-    // Si pasó el escudo, lo borramos
+    // Si pasó los escudos, procedemos a la baja
     await prisma.club.delete({
-      where: { id: Number(clubId) },
+      where: { id: clubId },
     });
 
-    return res
-      .status(200)
-      .json({ status: "success", message: "Club eliminado correctamente." });
+    return res.status(200).json({
+      status: "success",
+      message: `Club '${clubExistente.nombre}' eliminado correctamente del sistema.`,
+    });
   } catch (error) {
     console.error("Error al eliminar club:", error);
     return res
@@ -113,12 +116,10 @@ export const crearRegion = async (req: AuthRequest, res: Response) => {
   try {
     const { nombre } = req.body;
     if (!nombre)
-      return res
-        .status(400)
-        .json({
-          status: "error",
-          message: "El nombre de la región es obligatorio.",
-        });
+      return res.status(400).json({
+        status: "error",
+        message: "El nombre de la región es obligatorio.",
+      });
 
     const nuevaRegion = await prisma.region.create({
       data: { nombre: String(nombre) },
@@ -127,12 +128,10 @@ export const crearRegion = async (req: AuthRequest, res: Response) => {
     return res.status(201).json({ status: "success", data: nuevaRegion });
   } catch (error) {
     console.error("Error al crear región:", error);
-    return res
-      .status(500)
-      .json({
-        status: "error",
-        message: "Fallo al crear la región. Puede que el nombre ya exista.",
-      });
+    return res.status(500).json({
+      status: "error",
+      message: "Fallo al crear la región. Puede que el nombre ya exista.",
+    });
   }
 };
 
@@ -181,7 +180,8 @@ export const actualizarClub = async (req: AuthRequest, res: Response) => {
 export const toggleEstadoClub = async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    if (req.usuario?.rol !== 'SYSADMIN') return res.status(403).json({ message: "Sin permisos" });
+    if (req.usuario?.rol !== "SYSADMIN")
+      return res.status(403).json({ message: "Sin permisos" });
 
     // Buscamos cómo está el club ahora
     const club = await prisma.club.findUnique({ where: { id: Number(id) } });
@@ -190,12 +190,17 @@ export const toggleEstadoClub = async (req: any, res: any) => {
     // Invertimos el estado (si estaba en true pasa a false, y viceversa)
     const clubActualizado = await prisma.club.update({
       where: { id: Number(id) },
-      data: { activo: !club.activo }
+      data: { activo: !club.activo },
     });
 
-    res.json({ status: "success", message: `Club ${clubActualizado.activo ? 'Activado' : 'Inactivado'} correctamente` });
+    res.json({
+      status: "success",
+      message: `Club ${clubActualizado.activo ? "Activado" : "Inactivado"} correctamente`,
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ status: "error", message: "Error al cambiar estado" });
+    res
+      .status(500)
+      .json({ status: "error", message: "Error al cambiar estado" });
   }
 };

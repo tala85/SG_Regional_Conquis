@@ -150,8 +150,23 @@ export const login = async (req: Request, res: Response) => {
 export const actualizarUsuario = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    // Agregamos password y region a lo que recibimos
+    const targetId = Number(id);
     const { nombre, email, rol, clubId, password, regionId } = req.body;
+
+    const operarioId = req.usuario?.id;
+    const esSysadmin = req.usuario?.rol === "SYSADMIN";
+
+    // 🛡️ 1. CORTAFUEGOS ANTI-BOLA/IDOR CRÍTICO:
+    // Si NO sos SYSADMIN, solo podés editar TU PROPIO perfil.
+    if (!esSysadmin && targetId !== operarioId) {
+      console.warn(
+        `🛑 INTRUSIÓN: Usuario ${operarioId} intentó secuestrar/modificar la cuenta ${targetId}`,
+      );
+      return res.status(403).json({
+        status: "error",
+        message: "Brecha de seguridad: Solo podés modificar tu propio perfil.",
+      });
+    }
 
     if (!nombre || !email || !rol) {
       return res.status(400).json({
@@ -160,50 +175,50 @@ export const actualizarUsuario = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // LÓGICA DE NEGOCIO ACTUALIZADA:
-    const clubAsignado =
-      rol === "REGIONAL" || rol === "SYSADMIN"
-        ? null
-        : clubId
-          ? Number(clubId)
-          : null;
-
-    // 👈 Si es regional y mandaron la región, la convertimos a número
-    const regionAsignada =
-      rol === "REGIONAL" && regionId ? Number(regionId) : null;
-
-    // 🛡️ PREVENCIÓN DE ESCALADA DE PRIVILEGIOS
-    // Solo permitimos que se actualice el Rol o la Región si el que dispara la acción es el SYSADMIN.
-    const esSysadmin = req.usuario?.rol === "SYSADMIN";
-
-    // Si NO es Sysadmin, forzamos a que el rol y la zona sigan siendo los que ya tenía en la BD
-    const miPerfilActual = await prisma.usuario.findUnique({
-      where: { id: Number(id) },
+    // Buscamos el perfil actual en la BD para comparar y verificar existencia
+    const perfilActual = await prisma.usuario.findUnique({
+      where: { id: targetId },
     });
 
-    const rolFinal = esSysadmin ? rol : miPerfilActual?.rol;
-    const regionFinal =
-      esSysadmin && rolFinal === "REGIONAL"
-        ? regionId
-          ? Number(regionId)
-          : null
-        : miPerfilActual?.regionId;
-    const clubFinal = esSysadmin
-      ? clubId
-        ? Number(clubId)
-        : null
-      : miPerfilActual?.clubId;
+    if (!perfilActual) {
+      return res
+        .status(404)
+        .json({
+          status: "error",
+          message: "Usuario no encontrado en el sistema.",
+        });
+    }
+
+    // 🛡️ 2. PREVENCIÓN DE ESCALADA DE PRIVILEGIOS:
+    // Si sos Sysadmin, tomamos lo que mandaste. Si no, forzamos a que mantengas lo que ya tenías en BD.
+    const rolFinal = esSysadmin ? rol : perfilActual.rol;
+
+    // Lógica de Club y Región dependiendo del rol final (blindada)
+    let clubFinal = perfilActual.clubId;
+    let regionFinal = perfilActual.regionId;
+
+    if (esSysadmin) {
+      // Solo el Sysadmin puede reasignar clubes y regiones
+      clubFinal =
+        rolFinal === "REGIONAL" || rolFinal === "SYSADMIN"
+          ? null
+          : clubId
+            ? Number(clubId)
+            : null;
+      regionFinal =
+        rolFinal === "REGIONAL" && regionId ? Number(regionId) : null;
+    }
 
     // Preparamos los datos base a actualizar, sanitizados
     const datosActualizar: any = {
-      nombre,
-      email,
+      nombre: String(nombre).trim(),
+      email: String(email).trim().toLowerCase(), // Sanitización estándar
       rol: rolFinal,
       clubId: clubFinal,
       regionId: regionFinal,
     };
 
-    // 🛡️ BARRERA DE CRIPTOGRAFÍA: Si el usuario escribió una nueva contraseña, la encriptamos
+    // 🛡️ 3. BARRERA DE CRIPTOGRAFÍA: Si mandaron password nueva, la procesamos
     if (password && password.trim() !== "") {
       if (password.length < 8) {
         return res.status(400).json({
@@ -216,7 +231,7 @@ export const actualizarUsuario = async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.usuario.update({
-      where: { id: Number(id) },
+      where: { id: targetId },
       data: datosActualizar,
     });
 

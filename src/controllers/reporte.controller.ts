@@ -1,7 +1,7 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middlewares/auth.middleware'; // Usamos el request seguro
-import prisma from '../config/db';
-import ExcelJS from 'exceljs';
+import { Response } from "express";
+import { AuthRequest } from "../middlewares/auth.middleware"; // Usamos el request seguro
+import prisma from "../config/db";
+import ExcelJS from "exceljs";
 
 // 1. TU FUNCIÓN ORIGINAL (Mejorada con seguridad)
 export const obtenerReporteClub = async (req: AuthRequest, res: Response) => {
@@ -12,113 +12,183 @@ export const obtenerReporteClub = async (req: AuthRequest, res: Response) => {
     // Seguridad: Verificamos que el club le pertenezca a este usuario
     const usuarioId = req.usuario?.id;
     const rol = req.usuario?.rol;
-    const miPerfil = await prisma.usuario.findUnique({ where: { id: Number(usuarioId) } });
+    const miPerfil = await prisma.usuario.findUnique({
+      where: { id: Number(usuarioId) },
+    });
 
     // 1. Buscamos el club Y LE PEDIMOS QUE INCLUYA LOS INTEGRANTES
     const club = await prisma.club.findUnique({
       where: { id: Number(clubId) },
       include: {
         integrantes: {
-          include: { clase: true, progresos: true } // Traemos las clases también por si el reporte lo usa
-        }
-      }
+          include: { clase: true, progresos: true }, // Traemos las clases también por si el reporte lo usa
+        },
+      },
     });
 
-    if (!club) return res.status(404).json({ status: 'error', message: 'Club no encontrado.' });
+    if (!club)
+      return res
+        .status(404)
+        .json({ status: "error", message: "Club no encontrado." });
 
     // 2. 🛡️ BARRERA DE SEGURIDAD (RBAC)
-    if (rol === 'DIRECTOR' && club.id !== miPerfil?.clubId) {
-      return res.status(403).json({ status: 'error', message: 'Violación de acceso: Este club no es tuyo.' });
+    if (rol === "DIRECTOR" && club.id !== miPerfil?.clubId) {
+      return res
+        .status(403)
+        .json({
+          status: "error",
+          message: "Violación de acceso: Este club no es tuyo.",
+        });
     }
-    if (rol === 'REGIONAL' && club.regionId !== miPerfil?.regionId) {
-      return res.status(403).json({ status: 'error', message: 'Violación de acceso: Este club no es de tu zona.' });
+    if (rol === "REGIONAL" && club.regionId !== miPerfil?.regionId) {
+      return res
+        .status(403)
+        .json({
+          status: "error",
+          message: "Violación de acceso: Este club no es de tu zona.",
+        });
     }
 
     if (!club) {
-      return res.status(403).json({ status: 'error', message: 'No tienes permisos o el club no existe.' });
+      return res
+        .status(403)
+        .json({
+          status: "error",
+          message: "No tienes permisos o el club no existe.",
+        });
     }
 
     const totalIntegrantes = club.integrantes.length;
     const distribucionClases: Record<string, number> = {};
-    
-    club.integrantes.forEach(integrante => {
-      const nombreClase = integrante.clase?.nombre || 'Sin clase asignada';
-      distribucionClases[nombreClase] = (distribucionClases[nombreClase] || 0) + 1;
+
+    club.integrantes.forEach((integrante) => {
+      const nombreClase = integrante.clase?.nombre || "Sin clase asignada";
+      distribucionClases[nombreClase] =
+        (distribucionClases[nombreClase] || 0) + 1;
     });
 
-    const resumenIntegrantes = club.integrantes.map(int => ({
+    const resumenIntegrantes = club.integrantes.map((int) => ({
       nombreCompleto: `${int.nombre} ${int.apellido}`,
       funcion: int.funcion,
-      claseActual: int.clase?.nombre || 'Ninguna',
-      requisitosAprobados: int.progresos.length
+      claseActual: int.clase?.nombre || "Ninguna",
+      requisitosAprobados: int.progresos.length,
     }));
 
     return res.status(200).json({
-      status: 'success',
+      status: "success",
       data: {
         informacionClub: `Iglesia: ${club.iglesia} - Distrito: ${club.distrito}`,
         estadisticas: { totalIntegrantes, distribucionClases },
-        detalleIntegrantes: resumenIntegrantes
-      }
+        detalleIntegrantes: resumenIntegrantes,
+      },
     });
-
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ status: 'error', message: 'Fallo interno al procesar el reporte.' });
+    return res
+      .status(500)
+      .json({
+        status: "error",
+        message: "Fallo interno al procesar el reporte.",
+      });
   }
 };
 
 // 2. NUEVA FUNCIÓN: EXCEL DE INVESTIDURA (Fase 9)
-export const generarReporteInvestidura = async (req: AuthRequest, res: Response) => {
+export const generarReporteInvestidura = async (
+  req: AuthRequest,
+  res: Response,
+) => {
   try {
     const regionalId = req.usuario?.id;
     const clubId = Number(req.params.clubId);
 
-    const clubMio = await prisma.club.findUnique({ where: { id: Number(clubId) } });
-    
+    const clubMio = await prisma.club.findUnique({
+      where: { id: Number(clubId) },
+    });
+
     // Y aplicamos la misma barrera de seguridad rápida
-    const miPerfilPDF = await prisma.usuario.findUnique({ where: { id: Number(req.usuario?.id) } });
-    if (req.usuario?.rol === 'DIRECTOR' && clubMio?.id !== miPerfilPDF?.clubId) throw new Error("Acceso denegado");
-    if (req.usuario?.rol === 'REGIONAL' && clubMio?.regionId !== miPerfilPDF?.regionId) throw new Error("Acceso denegado");
-    if (!clubMio) return res.status(403).json({ status: 'error', message: 'No tienes permisos sobre este club.' });
+    const miPerfilPDF = await prisma.usuario.findUnique({
+      where: { id: Number(req.usuario?.id) },
+    });
+    if (
+      req.usuario?.rol === "DIRECTOR" &&
+      clubMio?.id !== miPerfilPDF?.clubId
+    ) {
+      return res
+        .status(403)
+        .json({
+          status: "error",
+          message: "Acceso denegado. El club no es tuyo.",
+        });
+    }
+    if (
+      req.usuario?.rol === "REGIONAL" &&
+      clubMio?.regionId !== miPerfilPDF?.regionId
+    ) {
+      return res
+        .status(403)
+        .json({
+          status: "error",
+          message: "Acceso denegado. El club no pertenece a tu región.",
+        });
+    }
+    if (!clubMio)
+      return res
+        .status(403)
+        .json({
+          status: "error",
+          message: "No tienes permisos sobre este club.",
+        });
 
     // Traemos a los que ya terminaron la tarjeta
     const listosParaInvestir = await prisma.integranteClase.findMany({
-      where: { integrante: { clubId: clubId }, estado: 'INVESTIDO' },
-      include: { integrante: true, clase: true }
+      where: { integrante: { clubId: clubId }, estado: "INVESTIDO" },
+      include: { integrante: true, clase: true },
     });
 
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Reporte de Investidura');
+    const worksheet = workbook.addWorksheet("Reporte de Investidura");
 
     worksheet.columns = [
-      { header: 'Nombre', key: 'nombre', width: 25 },
-      { header: 'Apellido', key: 'apellido', width: 25 },
-      { header: 'Clase Alcanzada', key: 'clase', width: 30 },
-      { header: 'Fecha de Finalización', key: 'fecha', width: 20 },
-      { header: 'XP Total', key: 'xp', width: 15 }
+      { header: "Nombre", key: "nombre", width: 25 },
+      { header: "Apellido", key: "apellido", width: 25 },
+      { header: "Clase Alcanzada", key: "clase", width: 30 },
+      { header: "Fecha de Finalización", key: "fecha", width: 20 },
+      { header: "XP Total", key: "xp", width: 15 },
     ];
 
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF004080' } };
+    worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    worksheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF004080" },
+    };
 
-    listosParaInvestir.forEach(item => {
+    listosParaInvestir.forEach((item) => {
       worksheet.addRow({
         nombre: item.integrante.nombre,
         apellido: item.integrante.apellido,
         clase: item.clase.nombre,
-        fecha: item.fechaFin ? item.fechaFin.toLocaleDateString() : 'Pendiente',
-        xp: item.integrante.xp
+        fecha: item.fechaFin ? item.fechaFin.toLocaleDateString() : "Pendiente",
+        xp: item.integrante.xp,
       });
     });
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=Investidura_Club_${clubId}.xlsx`);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=Investidura_Club_${clubId}.xlsx`,
+    );
 
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ status: 'error', message: 'Fallo al generar el excel.' });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Fallo al generar el excel." });
   }
 };

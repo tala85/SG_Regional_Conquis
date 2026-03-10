@@ -12,6 +12,8 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import Papa from "papaparse";
+import Mensajeria from "./components/Mensajeria";
+import { mensajeService } from "./services/mensaje.service.ts";
 
 // --- INTERFACES ---
 interface Integrante {
@@ -94,11 +96,19 @@ function App() {
   const [token, setToken] = useState<string | null>(
     localStorage.getItem("tokenConquis"),
   );
+  const [mostrarPass, setMostrarPass] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [errorLogin, setErrorLogin] = useState("");
+  const [mensajesSinLeer, setMensajesSinLeer] = useState(0);
   const [vista, setVista] = useState<
-    "dashboard" | "directorio" | "perfil" | "auditoria" | "gestion" | "agenda"
+    | "dashboard"
+    | "directorio"
+    | "perfil"
+    | "auditoria"
+    | "gestion"
+    | "agenda"
+    | "mensajes"
   >("dashboard");
   const [eventosAgenda, setEventosAgenda] = useState<any[]>([]);
   const [nuevoEvento, setNuevoEvento] = useState({
@@ -198,8 +208,9 @@ function App() {
       cargarCatalogoMaestrias();
       cargarRankingYMetricas();
       cargarCatalogosFormularios();
+      chequearMensajesNuevos();
     }
-  }, [token]);
+  }, [token, vista]);
 
   // =============================================
   // AUTH
@@ -290,6 +301,22 @@ function App() {
     }
   };
 
+  const chequearMensajesNuevos = async () => {
+    try {
+      const bandeja = await mensajeService.obtenerBandejaEntrada();
+      // Filtramos y contamos cuántos tienen el campo 'leido' en false
+      const cantidadSinLeer = bandeja.filter((msg) => !msg.leido).length;
+      setMensajesSinLeer(cantidadSinLeer);
+    } catch (error) {
+      console.error("No se pudo obtener el contador de mensajes");
+    }
+  };
+
+  // Función para descontar manualmente el globo rojo
+  const descontarNotificacion = () => {
+    setMensajesSinLeer((prev) => Math.max(0, prev - 1));
+  };
+
   // =============================================
   // AGENDA
   // =============================================
@@ -357,17 +384,39 @@ function App() {
     setVista("perfil");
     setBandaVirtual(null);
     setMostrarFormFirma(false);
+
+    // 1. Cargar Banda Virtual (Independiente de la clase)
     try {
-      const [resBanda, resPendientes, resStats] = await Promise.all([
-        api.get(`/api/integrantes/${integrante.id}/banda-virtual`),
+      const resBanda = await api.get(
+        `/api/integrantes/${integrante.id}/banda-virtual`,
+      );
+      setBandaVirtual(resBanda.data.data);
+    } catch (error) {
+      console.error("Error al cargar la banda virtual:", error);
+    }
+
+    // 2. Cargar Progresos y Estadísticas (Depende de si tiene clase)
+    try {
+      const [resPendientes, resStats] = await Promise.all([
         api.get(`/api/progresos/integrante/${integrante.id}/pendientes`),
         api.get(`/api/progresos/integrante/${integrante.id}/estadisticas`),
       ]);
-      setBandaVirtual(resBanda.data.data);
       setRequisitosPendientes(resPendientes.data.data);
       setEstadisticasClase(resStats.data.data);
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      // Si el backend nos responde 400, significa que no hay clase asignada (es nuestra regla de negocio)
+      if (error.response?.status === 400) {
+        console.warn(`El integrante no tiene clase asignada todavía.`);
+        setRequisitosPendientes([]); // Vaciamos la lista para que no rompa el mapeo
+        setEstadisticasClase({
+          total: 0,
+          aprobados: 0,
+          porcentaje: 0,
+          clase: "Sin Clase",
+        });
+      } else {
+        console.error("Error al cargar los progresos:", error);
+      }
     }
   };
 
@@ -462,16 +511,31 @@ function App() {
 
   const handleEliminarIntegrante = async () => {
     if (!integranteSeleccionado) return;
+
     const confirmacion = window.confirm(
       `⚠️ ADVERTENCIA ⚠️\n¿Eliminar a ${integranteSeleccionado.nombre} ${integranteSeleccionado.apellido} de forma IRREVERSIBLE?`,
     );
+
     if (confirmacion) {
       try {
         await api.delete(`/api/integrantes/${integranteSeleccionado.id}`);
-        alert("Expediente eliminado permanentemente.");
-        setVista("dashboard");
+        alert("Integrante dado de baja correctamente.");
+
+        // 1. Limpiamos la lista "directorio" para no recargar la pantalla
+        setDirectorio((prevDirectorio) =>
+          prevDirectorio.filter((int) => int.id !== integranteSeleccionado.id),
+        );
+
+        // 2. Limpiamos la memoria del seleccionado
+        setIntegranteSeleccionado(null);
+
+        // 3. Volvemos a la vista "directorio" (¡Con comillas!)
+        setVista("directorio");
       } catch (error: any) {
-        alert(`Error al eliminar: ${error.response?.data?.message}`);
+        const mensajeError =
+          error.response?.data?.message ||
+          "Ocurrió un error de conexión con el servidor.";
+        alert(`Error al eliminar: ${mensajeError}`);
       }
     }
   };
@@ -791,13 +855,22 @@ function App() {
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide">
                 Contraseña Segura
               </label>
-              <input
-                type="password"
-                required
-                value={loginPass}
-                onChange={(e) => setLoginPass(e.target.value)}
-                className="w-full mt-1 p-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 outline-none"
-              />
+              <div className="relative">
+                <input
+                  type={mostrarPass ? "text" : "password"} // Alterna el tipo
+                  required
+                  value={loginPass}
+                  onChange={(e) => setLoginPass(e.target.value)}
+                  className="w-full mt-1 p-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 outline-none pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarPass(!mostrarPass)}
+                  className="absolute right-3 top-10 text-gray-500 hover:text-gray-700"
+                >
+                  {mostrarPass ? "🙈" : "👁️"}
+                </button>
+              </div>
             </div>
             <button
               type="submit"
@@ -851,6 +924,20 @@ function App() {
             >
               Agenda
             </button>
+
+            <button
+              onClick={() => setVista("mensajes")}
+              className={`relative px-3 py-2 rounded font-bold transition-colors ${vista === "mensajes" ? "bg-teal-600" : "hover:bg-blue-800"}`}
+            >
+              Mensajes
+              {/* Notificador visual (Badge) */}
+              {mensajesSinLeer > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-md border-2 border-blue-900 animate-pulse">
+                  {mensajesSinLeer}
+                </span>
+              )}
+            </button>
+
             {/* 🛡️ RESTRICCIÓN: El SOC solo lo opera el Administrador Global */}
             {localStorage.getItem("rolConquis") === "SYSADMIN" && (
               <button
@@ -2924,6 +3011,11 @@ function App() {
               </>
             )}
           </div>
+        )}
+
+        {/* VISTA 7: MENSAJERÍA */}
+        {vista === "mensajes" && (
+          <Mensajeria alActualizar={descontarNotificacion} />
         )}
       </main>
     </div>

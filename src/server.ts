@@ -12,7 +12,6 @@ import bcrypt from "bcryptjs";
 // ==========================================
 import claseRoutes from "./routes/clase.routes";
 import integranteRoutes from "./routes/integrante.routes";
-import usuarioRoutes from "./routes/usuario.routes";
 import clubRoutes from "./routes/club.routes";
 import authRoutes from "./routes/auth.routes";
 import reporteRoutes from "./routes/reporte.routes";
@@ -23,6 +22,7 @@ import especialidadRoutes from "./routes/especialidad.routes"; // <-- Lo movimos
 import auditRoutes from "./routes/audit.routes"; // <-- Lo movimos arriba
 import { auditoriaMiddleware } from "./middlewares/audit.middleware"; // <-- Lo movimos arriba
 import agendaRoutes from "./routes/agenda.routes";
+import mensajeRoutes from "./routes/mensaje.routes";
 
 // Cargar variables de entorno (.env)
 dotenv.config();
@@ -84,7 +84,6 @@ app.get("/api/estado", (req: Request, res: Response) => {
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/clases", claseRoutes);
 app.use("/api/integrantes", integranteRoutes);
-app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/clubes", clubRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/reportes", reporteRoutes);
@@ -93,6 +92,7 @@ app.use("/api/requisitos", requisitoRoutes);
 app.use("/api/especialidades", especialidadRoutes);
 app.use("/api/auditoria", auditRoutes);
 app.use("/api/agenda", agendaRoutes);
+app.use('/api/mensajes', mensajeRoutes);
 
 // ==========================================
 // INICIO DEL SERVIDOR

@@ -1,51 +1,93 @@
-import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Response } from "express";
+import prisma from "../config/db"; // 👈 CORRECCIÓN: Usamos la instancia única
+import { AuthRequest } from "../middlewares/auth.middleware";
 
-const prisma = new PrismaClient();
-
-export const obtenerAgenda = async (req: Request, res: Response) => {
+export const obtenerAgenda = async (req: AuthRequest, res: Response) => {
   try {
-    // Busca los eventos ordenados por fecha más próxima
+    const rol = req.usuario?.rol;
+    const miClubId = req.usuario?.clubId;
+
+    // 🛡️ Filtro inteligente: El Director ve solo su agenda y eventos globales (clubId = null)
+    const filtro =
+      rol === "DIRECTOR"
+        ? { OR: [{ clubId: miClubId }, { clubId: null }] }
+        : {}; // Regional y Sysadmin ven todo
+
     const eventos = await prisma.eventoAgenda.findMany({
-      orderBy: { fecha: 'asc' }
+      where: filtro,
+      orderBy: { fecha: "asc" },
     });
-    res.status(200).json({ data: eventos });
+    return res.status(200).json({ status: "success", data: eventos });
   } catch (error) {
-    res.status(500).json({ message: 'Error al obtener la agenda.', error });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Error al obtener la agenda." });
   }
 };
 
-export const crearEvento = async (req: Request, res: Response) => {
+export const crearEvento = async (req: AuthRequest, res: Response) => {
   try {
     const { titulo, descripcion, fecha, clubId } = req.body;
-    
+    const rol = req.usuario?.rol;
+    const miClubId = req.usuario?.clubId;
+
+    // 🛡️ Control de Jurisdicción: Un Director solo puede crear para su club
+    const clubAsignado =
+      rol === "DIRECTOR" ? miClubId : clubId ? parseInt(clubId) : null;
+
     const nuevoEvento = await prisma.eventoAgenda.create({
       data: {
-        titulo,
-        descripcion,
-        fecha: new Date(fecha), // Convertimos el string a Fecha
-        clubId: clubId ? parseInt(clubId) : null,
-        estado: 'PENDIENTE'
-      }
+        titulo: String(titulo),
+        descripcion: descripcion ? String(descripcion) : null,
+        fecha: new Date(fecha),
+        clubId: clubAsignado,
+        estado: "PENDIENTE",
+      },
     });
-    
-    res.status(201).json({ message: 'Evento creado exitosamente', data: nuevoEvento });
+
+    return res
+      .status(201)
+      .json({
+        status: "success",
+        message: "Evento agendado exitosamente",
+        data: nuevoEvento,
+      });
   } catch (error) {
-    res.status(500).json({ message: 'Error al registrar el evento.', error });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Error al registrar el evento." });
   }
 };
 
-export const eliminarEvento = async (req: Request, res: Response) => {
+export const eliminarEvento = async (req: AuthRequest, res: Response) => {
   try {
-    // Le afirmamos a TypeScript que el parámetro id es un único string
-    const id = req.params.id as string;
-    
-    await prisma.eventoAgenda.delete({
-      where: { id: parseInt(id, 10) }
-    });
-    
-    res.status(200).json({ message: 'Evento eliminado de la agenda.' });
+    const id = Number(req.params.id);
+    const rol = req.usuario?.rol;
+    const miClubId = req.usuario?.clubId;
+
+    const evento = await prisma.eventoAgenda.findUnique({ where: { id } });
+    if (!evento)
+      return res
+        .status(404)
+        .json({ status: "error", message: "Evento no encontrado." });
+
+    // 🛡️ Control de Jurisdicción: El Director no puede borrar eventos de otros o globales
+    if (rol === "DIRECTOR" && evento.clubId !== miClubId) {
+      return res
+        .status(403)
+        .json({
+          status: "error",
+          message: "No podés eliminar un evento que no pertenece a tu club.",
+        });
+    }
+
+    await prisma.eventoAgenda.delete({ where: { id } });
+    return res
+      .status(200)
+      .json({ status: "success", message: "Evento cancelado y eliminado." });
   } catch (error) {
-    res.status(500).json({ message: 'Error al eliminar el evento.', error });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Error al eliminar el evento." });
   }
 };

@@ -38,12 +38,10 @@ export const crearIntegrante = async (req: AuthRequest, res: Response) => {
     // 🛡️ REGLA DE CIBERSEGURIDAD ACTUALIZADA
     if (rol === "DIRECTOR") {
       if (Number(clubId) !== req.usuario?.clubId) {
-        return res
-          .status(403)
-          .json({
-            status: "error",
-            message: "No tenés permisos para agregar integrantes a este club.",
-          });
+        return res.status(403).json({
+          status: "error",
+          message: "No tenés permisos para agregar integrantes a este club.",
+        });
       }
     }
 
@@ -190,12 +188,10 @@ export const actualizarIntegrante = async (req: Request, res: Response) => {
     const { nombre, apellido, funcion, claseId } = req.body;
 
     if (!nombre || !apellido) {
-      return res
-        .status(400)
-        .json({
-          status: "error",
-          message: "Nombre y apellido son obligatorios.",
-        });
+      return res.status(400).json({
+        status: "error",
+        message: "Nombre y apellido son obligatorios.",
+      });
     }
 
     const actualizado = await prisma.integrante.update({
@@ -289,52 +285,80 @@ export const eliminarIntegrante = async (req: AuthRequest, res: Response) => {
 };
 
 // ==========================================
-// 6. OBTENER INTEGRANTES POR CLUB (con paginación y búsqueda)
+// 6. OBTENER INTEGRANTES POR CLUB (con paginación y búsqueda real)
 // ==========================================
 export const obtenerIntegrantesPorClub = async (
   req: AuthRequest,
   res: Response,
 ) => {
   try {
-    // El club que el usuario pide ver desde el menú desplegable del frontend
     const clubSolicitadoId = Number(req.params.clubId);
-
     const rolUsuario = req.usuario?.rol;
     const miClubId = req.usuario?.clubId;
 
     // 🛡️ CORTAFUEGOS: El Director solo puede pedir ver a SU club.
-    if (rolUsuario === "DIRECTOR") {
-      if (clubSolicitadoId !== miClubId) {
-        console.warn(
-          `🛑 INTRUSIÓN: Director ${req.usuario?.id} intentó espiar el club ${clubSolicitadoId}`,
-        );
-        return res.status(403).json({
-          status: "error",
-          message:
-            "Violación de Seguridad: Solo tenés jurisdicción sobre tu propio club.",
-        });
-      }
+    if (rolUsuario === "DIRECTOR" && clubSolicitadoId !== miClubId) {
+      console.warn(
+        `🛑 INTRUSIÓN: Director ${req.usuario?.id} intentó espiar el club ${clubSolicitadoId}`,
+      );
+      return res.status(403).json({
+        status: "error",
+        message:
+          "Violación de Seguridad: Solo tenés jurisdicción sobre tu propio club.",
+      });
     }
 
-    // Si pasó el cortafuegos, buscamos a los chicos de ese club
-    const integrantes = await prisma.integrante.findMany({
-      where: { clubId: clubSolicitadoId },
-      include: {
-        club: { select: { nombre: true } },
-        clase: { select: { nombre: true } },
-      },
-      orderBy: { xp: "desc" }, // Los ordenamos por XP para que los mejores salgan primero
-    });
+    // --- MOTOR DE PAGINACIÓN Y BÚSQUEDA ---
+    // Recibimos parámetros de la URL (ej: ?page=1&limit=10&search=juan)
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const search = req.query.search ? String(req.query.search).trim() : "";
+    const skip = (page - 1) * limit;
 
-    return res.status(200).json({ status: "success", data: integrantes });
+    // Armamos el filtro dinámico
+    const filtro: any = { clubId: clubSolicitadoId };
+
+    if (search) {
+      // Intentamos convertir la búsqueda a número por si están buscando un DNI
+      const searchNum = Number(search);
+      filtro.OR = [
+        { nombre: { contains: search, mode: "insensitive" } },
+        { apellido: { contains: search, mode: "insensitive" } },
+        ...(isNaN(searchNum) ? [] : [{ dni: searchNum }]), // Solo agrega el filtro DNI si es un número válido
+      ];
+    }
+
+    // Ejecutamos ambas consultas en paralelo (Promise.all) para no perder tiempo
+    const [integrantes, totalIntegrantes] = await Promise.all([
+      prisma.integrante.findMany({
+        where: filtro,
+        skip: skip,
+        take: limit,
+        include: {
+          club: { select: { nombre: true } },
+          clase: { select: { nombre: true } },
+        },
+        orderBy: { xp: "desc" },
+      }),
+      prisma.integrante.count({ where: filtro }), // Contamos el total real con ese filtro
+    ]);
+
+    return res.status(200).json({
+      status: "success",
+      data: integrantes,
+      meta: {
+        total: totalIntegrantes,
+        page,
+        limit,
+        totalPages: Math.ceil(totalIntegrantes / limit),
+      },
+    });
   } catch (error) {
     console.error("Error obteniendo el directorio:", error);
-    return res
-      .status(500)
-      .json({
-        status: "error",
-        message: "Fallo al obtener la nómina del club.",
-      });
+    return res.status(500).json({
+      status: "error",
+      message: "Fallo al obtener la nómina del club.",
+    });
   }
 };
 

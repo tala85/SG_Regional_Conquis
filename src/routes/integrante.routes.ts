@@ -3,6 +3,7 @@ import { verificarToken, verificarRol } from "../middlewares/auth.middleware";
 import {
   crearIntegrante,
   actualizarIntegrante,
+  eliminarIntegrante,
   obtenerBandaVirtual,
   obtenerRanking,
   obtenerMetricas,
@@ -44,6 +45,7 @@ router.get("/metricas", verificarToken, obtenerMetricas);
 router.get("/club/:clubId", verificarToken, obtenerIntegrantesPorClub);
 router.post("/", verificarToken, crearIntegrante);
 router.put("/:id", verificarToken, actualizarIntegrante);
+router.delete("/:id", verificarToken, eliminarIntegrante);
 router.patch(
   "/:integranteId/asignar-clase",
   verificarToken,
